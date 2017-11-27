@@ -42,12 +42,12 @@ struct ReaderConfig
     convert_text::Bool
     convert_header_text::Bool
     ReaderConfig(filename, config = Dict()) = new(filename, 
-        getdefault(config, :encoding, default_encoding),
-        getdefault(config, :chunksize, default_chunksize),
-        getdefault(config, :convert_dates, default_convert_dates), 
-        getdefault(config, :convert_empty_string_to_missing, default_convert_empty_string_to_missing),
-        getdefault(config, :convert_text, default_convert_text), 
-        getdefault(config, :convert_header_text, default_convert_header_text))
+        get(config, :encoding, default_encoding),
+        get(config, :chunksize, default_chunksize),
+        get(config, :convert_dates, default_convert_dates), 
+        get(config, :convert_empty_string_to_missing, default_convert_empty_string_to_missing),
+        get(config, :convert_text, default_convert_text), 
+        get(config, :convert_header_text, default_convert_header_text))
 end
 
 mutable struct Handler

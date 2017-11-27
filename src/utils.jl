@@ -1,12 +1,4 @@
 """
-Return value by `key` from the provided `dict`. If the key is not found in `dict`,
-then just return the provided `default` value.
-"""
-function getdefault(dict::Dict, key::Any, default::Any) 
-    haskey(dict, key) ? dict[key] : default
-end
-
-"""
 Strip from the right end of the `bytes` array for any byte that matches the ones
 specified in the `remove` argument.  See Python's bytes.rstrip function.
 """
