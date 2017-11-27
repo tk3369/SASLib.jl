@@ -51,6 +51,7 @@ struct ReaderConfig
 end
 
 mutable struct Handler
+    io::IOStream
     config::ReaderConfig
     
     compression::AbstractString
@@ -60,25 +61,41 @@ mutable struct Handler
     column_formats::Array{AbstractString,1}
     columns::Array{AbstractString,1}
     
-    _current_page_data_subheader_pointers::Array{Any}
-    _cached_page::Array{UInt8,1}
-    _column_data_lengths::Array{Any}
-    _column_data_offsets::Array{Any}
-    _current_row_in_file_index::UInt64
-    _current_row_on_page_index::UInt64
+    current_page_data_subheader_pointers::Array{Any}
+    cached_page::Array{UInt8,1}
+    column_data_lengths::Array{Any}
+    column_data_offsets::Array{Any}
+    current_row_in_file_index::UInt64
+    current_row_on_page_index::UInt64
 
-    io::IOStream
+    file_endianness::Symbol
+    sys_endianness::Symbol
+    byte_swap::Bool
 
-    state::Dict{Symbol, Any}
-    x::Any # TODO - debug only, removed later
+    U64::Bool
+    int_length::UInt8
+    page_bit_offset::UInt8
+    subheader_pointer_length::UInt8
 
-    Handler(config::ReaderConfig) = new(config,
-        "", [], [], [], [], [],
-        [], [], [], [], 0, 0,
+    file_encoding::AbstractString
+    platform::AbstractString
+    name::Union{AbstractString,Vector{UInt8}}
+    file_type::Union{AbstractString,Vector{UInt8}}
+
+    date_created::DateTime
+    date_modified::DateTime
+
+    header_length::UInt64
+    page_length::UInt64
+    page_count::UInt64
+    sas_release::Union{AbstractString,Vector{UInt8}}
+    server_type::Union{AbstractString,Vector{UInt8}}
+    os_version::Union{AbstractString,Vector{UInt8}}
+    os_name::Union{AbstractString,Vector{UInt8}}
+    
+    Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
-        Dict{Symbol, Any}(),
-        nothing
-        )
+        config)
 end
 
 """
@@ -116,7 +133,7 @@ function _read_float(handler, offset, width)
     end
     buf = _read_bytes(handler, offset, width)
     value = reinterpret(width == 4 ? Float32 : Float64, buf)[1]
-    if (handler.state[:byte_swap])
+    if (handler.byte_swap)
         value = bswap(value)
     end
     return value
@@ -129,14 +146,14 @@ function _read_int(handler, offset, width)
     end
     buf = _read_bytes(handler, offset, width)
     value = reinterpret(Dict(1 => Int8, 2 => Int16, 4 => Int32, 8 => Int64)[width], buf)[1]
-    if (handler.state[:byte_swap])
+    if (handler.byte_swap)
         value = bswap(value)
     end
     return value
 end
 
 function _read_bytes(handler, offset, len)
-    if handler._cached_page == []
+    if handler.cached_page == []
         seek(handler.io, offset)
         try
             return read(handler.io, len)
@@ -144,28 +161,23 @@ function _read_bytes(handler, offset, len)
             throw(FileFormatError("Unable to read $(len) bytes from file position $(offset)"))
         end
     else
-        if offset + len > length(handler._cached_page)
+        if offset + len > length(handler.cached_page)
             throw(FileFormatError(
-                "The cached page $(length(handler._cached_page)) is too small " *
+                "The cached page $(length(handler.cached_page)) is too small " *
                 "to read for range positions $offset to $len"))
         end
-        return handler._cached_page[offset+1:offset+len]  #offset is 0-based
+        return handler.cached_page[offset+1:offset+len]  #offset is 0-based
     end
 end
 
 function _get_properties(handler)
 
-    io = handler.io 
-
     # read header section
-    seekstart(io)
-    handler._cached_page = read(io, 288)
-
-    # Initiate state
-    state = handler.state = Dict{Symbol, Any}()
+    seekstart(handler.io)
+    handler.cached_page = read(handler.io, 288)
 
     # Check magic number
-    if handler._cached_page[1:length(magic)] != magic
+    if handler.cached_page[1:length(magic)] != magic
         throw(FileFormatError("magic number mismatch (not a SAS file?)"))
     end
     info("good magic number")
@@ -175,15 +187,15 @@ function _get_properties(handler)
     buf = _read_bytes(handler, align_1_offset, align_1_length)
     if buf == u64_byte_checker_value
         align2 = align_2_value
-        state[:U64] = true
-        state[:int_length] = 8
-        state[:page_bit_offset] = page_bit_offset_x64
-        state[:subheader_pointer_length] = subheader_pointer_length_x64
+        handler.U64 = true
+        handler.int_length = 8
+        handler.page_bit_offset = page_bit_offset_x64
+        handler.subheader_pointer_length = subheader_pointer_length_x64
     else
-        state[:U64] = false
-        state[:page_bit_offset] = page_bit_offset_x86
-        state[:subheader_pointer_length] = subheader_pointer_length_x86
-        state[:int_length] = 4
+        handler.U64 = false
+        handler.int_length = 4
+        handler.page_bit_offset = page_bit_offset_x86
+        handler.subheader_pointer_length = subheader_pointer_length_x86
     end
     buf = _read_bytes(handler, align_2_offset, align_2_length)
     if buf == align_1_checker_value
@@ -191,127 +203,127 @@ function _get_properties(handler)
     end
     total_align = align1 + align2
     info("successful reading alignment information")
-    info("buf = $buf, align1 = $align1, align2 = $align2, total_align=$total_align, state=$(state)")
+    info("buf = $buf, align1 = $align1, align2 = $align2, total_align=$total_align")
 
     # Get endianness information
     buf = _read_bytes(handler, endianness_offset, endianness_length)
     if buf == b"\x01"
-        state[:file_endianness] = :LittleEndian
+        handler.file_endianness = :LittleEndian
     else
-        state[:file_endianness] = :BigEndian
+        handler.file_endianness = :BigEndian
     end
-    info("file_endianness = $(state[:file_endianness])")
+    info("file_endianness = $(handler.file_endianness)")
     
     # Detect system-endianness and determine if byte swap will be required
-    state[:sys_endianness] = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
-    info("system endianess = $(state[:sys_endianness])")
+    handler.sys_endianness = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
+    info("system endianess = $(handler.sys_endianness)")
 
-    state[:byte_swap] = state[:sys_endianness] != state[:file_endianness]
-    info("byte_swap = $(state[:byte_swap])")
+    handler.byte_swap = handler.sys_endianness != handler.file_endianness
+    info("byte_swap = $(handler.byte_swap)")
         
     # Get encoding information
     buf = _read_bytes(handler, encoding_offset, encoding_length)[1]
     if haskey(encoding_names, buf)
-        state[:file_encoding] = encoding_names[buf]
+        handler.file_encoding = encoding_names[buf]
     else
-        state[:file_encoding] = "unknown (code=$buf)" 
+        handler.file_encoding = "unknown (code=$buf)" 
     end
-    info("file_encoding = $(state[:file_encoding])")
+    info("file_encoding = $(handler.file_encoding)")
 
     # Get platform information
     buf = _read_bytes(handler, platform_offset, platform_length)
     if buf == b"1"
-        state[:platform] = "unix"
+        handler.platform = "unix"
     elseif buf == b"2"
-        state[:platform] = "windows"
+        handler.platform = "windows"
     else
-        state[:platform] = "unknown"
+        handler.platform = "unknown"
     end
-    info("platform = $(state[:platform])")
+    info("platform = $(handler.platform)")
 
     buf = _read_bytes(handler, dataset_offset, dataset_length)
-    state[:name] = brstrip(buf, b"\x00 ")
+    handler.name = brstrip(buf, b"\x00 ")
     if handler.config.convert_header_text
-        info("before decode: name = $(state[:name])")
-        state[:name] = decode(state[:name], handler.config.encoding)
-        info("after decode:  name = $(state[:name])")
+        info("before decode: name = $(handler.name)")
+        handler.name = decode(handler.name, handler.config.encoding)
+        info("after decode:  name = $(handler.name)")
     end
 
     buf = _read_bytes(handler, file_type_offset, file_type_length)
-    state[:file_type] = brstrip(buf, b"\x00 ")
+    handler.file_type = brstrip(buf, b"\x00 ")
     if handler.config.convert_header_text
-        info("before decode: file_type = $(state[:file_type])")
-        state[:file_type] = decode(state[:file_type], handler.config.encoding)
-        info("after decode:  file_type = $(state[:file_type])")
+        info("before decode: file_type = $(handler.file_type)")
+        handler.file_type = decode(handler.file_type, handler.config.encoding)
+        info("after decode:  file_type = $(handler.file_type)")
     end
 
     # Timestamp is epoch 01/01/1960
     epoch =DateTime(1960, 1, 1, 0, 0, 0)
     x = _read_float(handler, date_created_offset + align1, date_created_length)
-    state[:date_created] = epoch + Base.Dates.Millisecond(round(x * 1000))
-    info("date created = $(x) => $(state[:date_created])")
+    handler.date_created = epoch + Base.Dates.Millisecond(round(x * 1000))
+    info("date created = $(x) => $(handler.date_created)")
     x = _read_float(handler, date_modified_offset + align1, date_modified_length)
-    state[:date_modified] = epoch + Base.Dates.Millisecond(round(x * 1000))
-    info("date modified = $(x) => $(state[:date_modified])")
+    handler.date_modified = epoch + Base.Dates.Millisecond(round(x * 1000))
+    info("date modified = $(x) => $(handler.date_modified)")
     
-    state[:header_length] = _read_int(handler, header_size_offset + align1, header_size_length)
+    handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
 
     # Read the rest of the header into cached_page.
-    buf = read(io, state[:header_length] - 288)
-    append!(handler._cached_page, buf)
-    if length(handler._cached_page) != state[:header_length]
+    buf = read(handler.io, handler.header_length - 288)
+    append!(handler.cached_page, buf)
+    if length(handler.cached_page) != handler.header_length
         throw(FileFormatError("The SAS7BDAT file appears to be truncated."))
     end
 
-    state[:page_length] = _read_int(handler, page_size_offset + align1, page_size_length)
-    info("page_length = $(state[:page_length])")
+    handler.page_length = _read_int(handler, page_size_offset + align1, page_size_length)
+    info("page_length = $(handler.page_length)")
 
-    state[:page_count] = _read_int(handler, page_count_offset + align1, page_count_length)
-    info("page_count = $(state[:page_count])")
+    handler.page_count = _read_int(handler, page_count_offset + align1, page_count_length)
+    info("page_count = $(handler.page_count)")
     
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
-    state[:sas_release] = brstrip(buf, b"\x00 ")
+    handler.sas_release = brstrip(buf, b"\x00 ")
     if handler.config.convert_header_text
-        state[:sas_release] = decode(state[:sas_release], handler.config.encoding)
+        handler.sas_release = decode(handler.sas_release, handler.config.encoding)
     end
-    info("SAS Release = $(state[:sas_release])")
+    info("SAS Release = $(handler.sas_release)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
-    state[:server_type] = brstrip(buf, b"\x00 ")
+    handler.server_type = brstrip(buf, b"\x00 ")
     if handler.config.convert_header_text
-        state[:server_type] = decode(state[:server_type], handler.config.encoding)
+        handler.server_type = decode(handler.server_type, handler.config.encoding)
     end
-    info("server_type = $(state[:server_type])")
+    info("server_type = $(handler.server_type)")
 
     buf = _read_bytes(handler, os_version_number_offset + total_align, os_version_number_length)
-    state[:os_version] = brstrip(buf, b"\x00 ")
+    handler.os_version = brstrip(buf, b"\x00 ")
     if handler.config.convert_header_text
-        state[:os_version] = decode(state[:os_version], handler.config.encoding)
+        handler.os_version = decode(handler.os_version, handler.config.encoding)
     end
-    info("os_version = $(state[:os_version])")
+    info("os_version = $(handler.os_version)")
     
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
     buf = brstrip(buf, b"\x00 ")
     if length(buf) > 0
-        state[:os_name] = decode(buf, handler.config.encoding)
+        handler.os_name = decode(buf, handler.config.encoding)
     else
         buf = _read_bytes(handler, os_maker_offset + total_align, os_maker_length)
-        state[:os_name] = brstrip(buf, b"\x00 ")
+        handler.os_name = brstrip(buf, b"\x00 ")
         if handler.config.convert_header_text
-            state[:os_name] = decode(state[:os_name], handler.config.encoding)
+            handler.os_name = decode(handler.os_name, handler.config.encoding)
         end
     end
-    info("os_name = $(state[:os_name])")
+    info("os_name = $(handler.os_name)")
 end
 
 function _parse_metadata(handler)
     done = false
     while !done
-        handler._cached_page = read(handler.io, handler.state[:page_length])
-        if length(handler._cached_page) <= 0
+        handler.cached_page = read(handler.io, handler.handler.page_length)
+        if length(handler.cached_page) <= 0
             break
         end
-        if length(handler._cached_page) != handler.state[:page_length]
+        if length(handler.cached_page) != handler.handler.page_length
             throw(FileFormatError("Failed to read a meta data page from the SAS file."))
         end
         done = _process_page_meta(handler)
@@ -320,24 +332,23 @@ end
 
 function _process_page_meta(handler)
     _read_page_header(handler)  
-    state = handler.state
     pt = [page_meta_type, page_amd_type] + page_mix_types
-    if state[:current_page_type] in pt
+    if handler.current_page_type in pt
         _process_page_metadata(handler)
     end
-    return ((state[:current_page_type] in [256] + page_mix_types) ||
+    return ((handler.current_page_type in [256] + page_mix_types) ||
             (handler._current_page_data_subheader_pointers != []))
 end
 
 function _read_page_header(handler)
     state = handler.state
-    bit_offset = state[:page_bit_offset]
+    bit_offset = handler.page_bit_offset
     tx = page_type_offset + bit_offset
-    state[:_current_page_type] = _read_int(handler, tx, page_type_length)
+    handler._current_page_type = _read_int(handler, tx, page_type_length)
     tx = block_count_offset + bit_offset
-    state[:current_page_block_count] = _read_int(handler, tx, block_count_length)
+    handler.current_page_block_count = _read_int(handler, tx, block_count_length)
     tx = subheader_count_offset + bit_offset
-    state[:current_page_subheaders_count] = _read_int(handler, tx, subheader_count_length)
+    handler.current_page_subheaders_count = _read_int(handler, tx, subheader_count_length)
 end
 
 function _process_page_metadata(handler)
@@ -670,14 +681,14 @@ end
 
 # def _read_next_page(self):
 # self._current_page_data_subheader_pointers = []
-# self._cached_page = self._path_or_buf.read(self._page_length)
-# if len(self._cached_page) <= 0:
+# self.cached_page = self._path_or_buf.read(self._page_length)
+# if len(self.cached_page) <= 0:
 #     return True
-# elif len(self._cached_page) != self._page_length:
+# elif len(self.cached_page) != self._page_length:
 #     self.close()
 #     msg = ("failed to read complete page from file "
 #            "(read {:d} of {:d} bytes)")
-#     raise ValueError(msg.format(len(self._cached_page),
+#     raise ValueError(msg.format(len(self.cached_page),
 #                                 self._page_length))
 
 # self._read_page_header()
