@@ -242,7 +242,7 @@ function _get_properties(handler)
     info("platform = $(handler.platform)")
 
     buf = _read_bytes(handler, dataset_offset, dataset_length)
-    handler.name = brstrip(buf, b"\x00 ")
+    handler.name = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         info("before decode: name = $(handler.name)")
         handler.name = decode(handler.name, handler.config.encoding)
@@ -250,7 +250,7 @@ function _get_properties(handler)
     end
 
     buf = _read_bytes(handler, file_type_offset, file_type_length)
-    handler.file_type = brstrip(buf, b"\x00 ")
+    handler.file_type = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         info("before decode: file_type = $(handler.file_type)")
         handler.file_type = decode(handler.file_type, handler.config.encoding)
@@ -282,33 +282,33 @@ function _get_properties(handler)
     info("page_count = $(handler.page_count)")
     
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
-    handler.sas_release = brstrip(buf, b"\x00 ")
+    handler.sas_release = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         handler.sas_release = decode(handler.sas_release, handler.config.encoding)
     end
     info("SAS Release = $(handler.sas_release)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
-    handler.server_type = brstrip(buf, b"\x00 ")
+    handler.server_type = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         handler.server_type = decode(handler.server_type, handler.config.encoding)
     end
     info("server_type = $(handler.server_type)")
 
     buf = _read_bytes(handler, os_version_number_offset + total_align, os_version_number_length)
-    handler.os_version = brstrip(buf, b"\x00 ")
+    handler.os_version = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         handler.os_version = decode(handler.os_version, handler.config.encoding)
     end
     info("os_version = $(handler.os_version)")
     
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
-    buf = brstrip(buf, b"\x00 ")
+    buf = brstrip(buf, zero_space)
     if length(buf) > 0
         handler.os_name = decode(buf, handler.config.encoding)
     else
         buf = _read_bytes(handler, os_maker_offset + total_align, os_maker_length)
-        handler.os_name = brstrip(buf, b"\x00 ")
+        handler.os_name = brstrip(buf, zero_space)
         if handler.config.convert_header_text
             handler.os_name = decode(handler.os_name, handler.config.encoding)
         end
@@ -485,7 +485,7 @@ end
 # text_block_size = self._read_int(offset, const.text_block_size_length)
 
 # buf = self._read_bytes(offset, text_block_size)
-# cname_raw = buf[0:text_block_size].rstrip(b"\x00 ")
+# cname_raw = buf[0:text_block_size].rstrip(zero_space)
 # cname = cname_raw
 # if self.convert_header_text:
 #     cname = cname.decode(self.encoding or self.default_encoding)

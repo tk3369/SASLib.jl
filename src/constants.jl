@@ -13,7 +13,7 @@ const magic = [
          b"\x09\xc7\x31\x8c\x18\x1f\x10\x11" ]
 
 const align_1_checker_value = b"3"
-const align_1_offset = 32
+const align_1_offset = 32^
 const align_1_length = 1
 const align_1_value = 4
 const u64_byte_checker_value = b"3"
@@ -122,6 +122,7 @@ const index_formatAndLabelIndex = 6
 const index_columnListIndex = 7
 const index_dataSubheaderIndex = 8
 
+
 const subheader_signature_to_index = Dict(
     b"\xF7\xF7\xF7\xF7" => index_rowSizeIndex,
     b"\x00\x00\x00\x00\xF7\xF7\xF7\xF7" => index_rowSizeIndex,
@@ -179,3 +180,4 @@ const sas_datetime_formats = ["DATETIME", "DTWKDATX",
                         "DATEAMPM", "DTDATE", "DTMONYY", "DTMONYY", "DTWKDATX",
                         "DTYEAR", "TOD", "MDYAMPM"]
 
+const zero_space = b"\x00 "
