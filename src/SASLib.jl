@@ -92,10 +92,25 @@ mutable struct Handler
     server_type::Union{AbstractString,Vector{UInt8}}
     os_version::Union{AbstractString,Vector{UInt8}}
     os_name::Union{AbstractString,Vector{UInt8}}
+
+    row_length
+    row_count
+    col_count_p1
+    col_count_p2
+    mix_page_row_count
+    lcs
+    lcp
     
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
         config)
+end
+
+struct subheader_pointer
+    offset
+    length
+    compression
+    ptype
 end
 
 """
@@ -319,11 +334,11 @@ end
 function _parse_metadata(handler)
     done = false
     while !done
-        handler.cached_page = read(handler.io, handler.handler.page_length)
+        handler.cached_page = read(handler.io, handler.page_length)
         if length(handler.cached_page) <= 0
             break
         end
-        if length(handler.cached_page) != handler.handler.page_length
+        if length(handler.cached_page) != handler.page_length
             throw(FileFormatError("Failed to read a meta data page from the SAS file."))
         end
         done = _process_page_meta(handler)
@@ -337,14 +352,13 @@ function _process_page_meta(handler)
         _process_page_metadata(handler)
     end
     return ((handler.current_page_type in [256] + page_mix_types) ||
-            (handler._current_page_data_subheader_pointers != []))
+            (handler.current_page_data_subheader_pointers != []))
 end
 
 function _read_page_header(handler)
-    state = handler.state
     bit_offset = handler.page_bit_offset
     tx = page_type_offset + bit_offset
-    handler._current_page_type = _read_int(handler, tx, page_type_length)
+    handler.current_page_type = _read_int(handler, tx, page_type_length)
     tx = block_count_offset + bit_offset
     handler.current_page_block_count = _read_int(handler, tx, block_count_length)
     tx = subheader_count_offset + bit_offset
@@ -352,183 +366,191 @@ function _read_page_header(handler)
 end
 
 function _process_page_metadata(handler)
+    bit_offset = handler.page_bit_offset
+    for i in 0:handler.current_page_subheaders_count-1
+        pointer = _process_subheader_pointers(handler, subheader_pointers_offset + bit_offset, i)
+        if pointer.length == 0
+            continue
+        end
+        if pointer.compression == truncated_subheader_id
+            continue
+        end
+        subheader_signature = _read_subheader_signature(handler, pointer.offset)
+        subheader_index = (
+            _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.ptype))
+        _process_subheader(handler, subheader_index, pointer)
+    end
 end
 
-# def _process_page_metadata(self):
-# bit_offset = self._page_bit_offset
+function _process_subheader_pointers(handler, offset, subheader_pointer_index)
 
-# for i in range(self._current_page_subheaders_count):
-#     pointer = self._process_subheader_pointers(
-#         const.subheader_pointers_offset + bit_offset, i)
-#     if pointer.length == 0:
-#         continue
-#     if pointer.compression == const.truncated_subheader_id:
-#         continue
-#     subheader_signature = self._read_subheader_signature(
-#         pointer.offset)
-#     subheader_index = (
-#         self._get_subheader_index(subheader_signature,
-#                                   pointer.compression, pointer.ptype))
-#     self._process_subheader(subheader_index, pointer)
+    total_offset = (offset + handler.subheader_pointer_length * subheader_pointer_index)
 
-# def _get_subheader_index(self, signature, compression, ptype):
-# index = const.subheader_signature_to_index.get(signature)
-# if index is None:
-#     f1 = ((compression == const.compressed_subheader_id) or
-#           (compression == 0))
-#     f2 = (ptype == const.compressed_subheader_type)
-#     if (self.compression != "") and f1 and f2:
-#         index = const.index.dataSubheaderIndex
-#     else:
-#         self.close()
-#         raise ValueError("Unknown subheader signature")
-# return index
+    subheader_offset = _read_int(handler, total_offset, handler._int_length)
+    total_offset += handler.int_length
 
-# def _process_subheader_pointers(self, offset, subheader_pointer_index):
+    subheader_length = _read_int(handler, total_offset, handler._int_length)
+    total_offset += handler._int_length
 
-# subheader_pointer_length = self._subheader_pointer_length
-# total_offset = (offset +
-#                 subheader_pointer_length * subheader_pointer_index)
+    subheader_compression = _read_int(handler, total_offset, 1)
+    total_offset += 1
 
-# subheader_offset = self._read_int(total_offset, self._int_length)
-# total_offset += self._int_length
+    subheader_type = _read_int(handler, total_offset, 1)
 
-# subheader_length = self._read_int(total_offset, self._int_length)
-# total_offset += self._int_length
+    return subheader_pointer(
+                subheader_offset, 
+                subheader_length, 
+                subheader_compression, 
+                subheader_type)
 
-# subheader_compression = self._read_int(total_offset, 1)
-# total_offset += 1
+end
 
-# subheader_type = self._read_int(total_offset, 1)
+function _read_subheader_signature(handler, offset)
+    return _read_bytes(handler, offset, handler._int_length)
+end
 
-# x = _subheader_pointer()
-# x.offset = subheader_offset
-# x.length = subheader_length
-# x.compression = subheader_compression
-# x.ptype = subheader_type
+function _get_subheader_index(handler, signature, compression, ptype)
+    return get(subheader_signature_to_index, signature,
+        begin
+            f1 = ((compression == compressed_subheader_id) || (compression == 0))
+            f2 = (ptype == compressed_subheader_type)
+            if (handler.compression != "") && f1 && f2
+                index = index_dataSubheaderIndex
+            else
+                throw(FileFormatError("Unknown subheader signature $(signature)"))
+            end
+        end)
+end
 
-# return x
 
-# def _read_subheader_signature(self, offset):
-# subheader_signature = self._read_bytes(offset, self._int_length)
-# return subheader_signature
+function _process_subheader(handler, subheader_index, pointer)
+    offset = pointer.offset
+    length = pointer.length
 
-# def _process_subheader(self, subheader_index, pointer):
-# offset = pointer.offset
-# length = pointer.length
+    if subheader_index == index_rowSizeIndex
+        processor = _process_rowsize_subheader
+    elseif subheader_index == index_columnSizeIndex
+        processor = _process_columnsize_subheader
+    elseif subheader_index == index_columnTextIndex
+        processor = _process_columntext_subheader
+    elseif subheader_index == index_columnNameIndex
+        processor = _process_columnname_subheader
+    elseif subheader_index == index_columnAttributesIndex
+        processor = _process_columnattributes_subheader
+    elseif subheader_index == index_formatAndLabelIndex
+        processor = _process_format_subheader
+    elseif subheader_index == index_columnListIndex
+        processor = _process_columnlist_subheader
+    elseif subheader_index == index_subheaderCountsIndex
+        processor = _process_subheader_counts
+    elseif subheader_index == index_dataSubheaderIndex
+        append!(handler.current_page_data_subheader_pointers, pointer)
+        return
+    else
+        throw(FileFormatError("unknown subheader index"))
+    end
+    processor(handler, offset, length)
+end
 
-# if subheader_index == const.index.rowSizeIndex:
-#     processor = self._process_rowsize_subheader
-# elif subheader_index == const.index.columnSizeIndex:
-#     processor = self._process_columnsize_subheader
-# elif subheader_index == const.index.columnTextIndex:
-#     processor = self._process_columntext_subheader
-# elif subheader_index == const.index.columnNameIndex:
-#     processor = self._process_columnname_subheader
-# elif subheader_index == const.index.columnAttributesIndex:
-#     processor = self._process_columnattributes_subheader
-# elif subheader_index == const.index.formatAndLabelIndex:
-#     processor = self._process_format_subheader
-# elif subheader_index == const.index.columnListIndex:
-#     processor = self._process_columnlist_subheader
-# elif subheader_index == const.index.subheaderCountsIndex:
-#     processor = self._process_subheader_counts
-# elif subheader_index == const.index.dataSubheaderIndex:
-#     self._current_page_data_subheader_pointers.append(pointer)
-#     return
-# else:
-#     raise ValueError("unknown subheader index")
+function _process_rowsize_subheader(handler, offset, length)
+    int_len = handler.int_length
+    lcs_offset = offset
+    lcp_offset = offset
+    if handler.U64
+        lcs_offset += 682
+        lcp_offset += 706
+    else
+        lcs_offset += 354
+        lcp_offset += 378
+    end
+    handler.row_length = _read_int(handler,
+        offset + row_length_offset_multiplier * int_len, int_len)
+    handler.row_count = _read_int(handler,
+        offset + row_count_offset_multiplier * int_len, int_len)
+    handler.col_count_p1 = _read_int(handler,
+        offset + col_count_p1_multiplier * int_len, int_len)
+    handler.col_count_p2 = _read_int(handler,
+        offset + col_count_p2_multiplier * int_len, int_len)
+    mx = row_count_on_mix_page_offset_multiplier * int_len
+    handler.mix_page_row_count = _read_int(handler, offset + mx, int_len)
+    handler.lcs = _read_int(handler, lcs_offset, 2)
+    handler.lcp = _read_int(handler, lcp_offset, 2)
+end
 
-# processor(offset, length)
+function _process_columnsize_subheader(handler, offset, length)
+    int_len = handler.int_length
+    offset += int_len
+    handler.column_count = _read_int(handler, offset, int_len)
+    if (handler.col_count_p1 + handler.col_count_p2 != handler.column_count)
+        warn("Warning: column count mismatch ($(handler.col_count_p1) + $(handler.col_count_p2) != $(handler.column_count))")
+    end
+end
 
-# def _process_rowsize_subheader(self, offset, length):
+# Unknown purpose
+function _process_subheader_counts(handler, offset, length)
+end
 
-# int_len = self._int_length
-# lcs_offset = offset
-# lcp_offset = offset
-# if self.U64:
-#     lcs_offset += 682
-#     lcp_offset += 706
-# else:
-#     lcs_offset += 354
-#     lcp_offset += 378
+function _process_columntext_subheader(handler, offset, length)
 
-# self.row_length = self._read_int(
-#     offset + const.row_length_offset_multiplier * int_len, int_len)
-# self.row_count = self._read_int(
-#     offset + const.row_count_offset_multiplier * int_len, int_len)
-# self.col_count_p1 = self._read_int(
-#     offset + const.col_count_p1_multiplier * int_len, int_len)
-# self.col_count_p2 = self._read_int(
-#     offset + const.col_count_p2_multiplier * int_len, int_len)
-# mx = const.row_count_on_mix_page_offset_multiplier * int_len
-# self._mix_page_row_count = self._read_int(offset + mx, int_len)
-# self._lcs = self._read_int(lcs_offset, 2)
-# self._lcp = self._read_int(lcp_offset, 2)
+    offset += handler.int_length
+    text_block_size = _read_int(handler, offset, text_block_size_length)
 
-# def _process_columnsize_subheader(self, offset, length):
-# int_len = self._int_length
-# offset += int_len
-# self.column_count = self._read_int(offset, int_len)
-# if (self.col_count_p1 + self.col_count_p2 !=
-#         self.column_count):
-#     print("Warning: column count mismatch (%d + %d != %d)\n",
-#           self.col_count_p1, self.col_count_p2, self.column_count)
+    buf = _read_bytes(handler, offset, text_block_size)
+    cname_raw = brstrip(buf[1:text_block_size], zero_space)
+    cname = cname_raw
+    if handler.convert_header_text
+        cname = decode(cname, handler.encoding)
+    end
+    append!(handler.column_names_strings, cname)
 
-# # Unknown purpose
-# def _process_subheader_counts(self, offset, length):
-# pass
+    if length(column_names_strings) == 1
+        compression_literal = ""
+        for cl in compression_literals
+            if cl in cname_raw
+                compression_literal = cl
+        handler.compression = compression_literal
+        offset -= handler.int_length
 
-# def _process_columntext_subheader(self, offset, length):
+        offset1 = offset + 16
+        if handler.U64
+            offset1 += 4
 
-# offset += self._int_length
-# text_block_size = self._read_int(offset, const.text_block_size_length)
-
-# buf = self._read_bytes(offset, text_block_size)
-# cname_raw = buf[0:text_block_size].rstrip(zero_space)
-# cname = cname_raw
-# if self.convert_header_text:
-#     cname = cname.decode(self.encoding or self.default_encoding)
-# self.column_names_strings.append(cname)
-
-# if len(self.column_names_strings) == 1:
-#     compression_literal = ""
-#     for cl in const.compression_literals:
-#         if cl in cname_raw:
-#             compression_literal = cl
-#     self.compression = compression_literal
-#     offset -= self._int_length
-
-#     offset1 = offset + 16
-#     if self.U64:
-#         offset1 += 4
-
-#     buf = self._read_bytes(offset1, self._lcp)
-#     compression_literal = buf.rstrip(b"\x00")
-#     if compression_literal == "":
-#         self._lcs = 0
-#         offset1 = offset + 32
-#         if self.U64:
-#             offset1 += 4
-#         buf = self._read_bytes(offset1, self._lcp)
-#         self.creator_proc = buf[0:self._lcp]
-#     elif compression_literal == const.rle_compression:
-#         offset1 = offset + 40
-#         if self.U64:
-#             offset1 += 4
-#         buf = self._read_bytes(offset1, self._lcp)
-#         self.creator_proc = buf[0:self._lcp]
-#     elif self._lcs > 0:
-#         self._lcp = 0
-#         offset1 = offset + 16
-#         if self.U64:
-#             offset1 += 4
-#         buf = self._read_bytes(offset1, self._lcs)
-#         self.creator_proc = buf[0:self._lcp]
-#     if self.convert_header_text:
-#         if hasattr(self, "creator_proc"):
-#             self.creator_proc = self.creator_proc.decode(
-#                 self.encoding or self.default_encoding)
+        buf = _read_bytes(handler, offset1, handler.lcp)
+        compression_literal = brstrip(buf, b"\x00")
+        if compression_literal == ""
+            handler.lcs = 0
+            offset1 = offset + 32
+            if handler.U64
+                offset1 += 4
+            end
+            buf = _read_bytes(handler, offset1, handler.lcp)
+            handler.creator_proc = buf[1:handler.lcp]
+        elseif compression_literal == rle_compression
+            offset1 = offset + 40
+            if handler.U64
+                offset1 += 4
+            end
+            buf = _read_bytes(handler, offset1, handler.lcp)
+            handler.creator_proc = buf[1:handler.lcp]
+        elseif handler.lcs > 0
+            handler.lcp = 0
+            offset1 = offset + 16
+            if handler.U64
+                offset1 += 4
+            end
+            buf = _read_bytes(handler, offset1, handler.lcs)
+            handler.creator_proc = buf[1:self.lcp]
+        else
+            handler.creator_proc = nothing
+        end
+        if handler.convert_header_text
+            if handler.creator_proc != nothing
+                handler.creator_proc = decode(creator_proc, handler.encoding)
+            end
+        end
+    end
+end
+        
 
 # def _process_columnname_subheader(self, offset, length):
 # int_len = self._int_length
