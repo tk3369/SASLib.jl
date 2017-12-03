@@ -1,5 +1,5 @@
 """
-Sample usage:
+Sample usage
 
 ```julia
 import SASLib
@@ -9,7 +9,7 @@ df = SASLib.read_sas7bdat("whatever.sas7bdat")
 ```julia
 df = SASLib.read_sas7bdat("whatever.sas7bdat", Dict(
         :encoding => "UTF-8"
-        :chunksize => 1,
+        :chunksize => 0,
         :convert_dates => true,
         :convert_empty_string_to_missing => true,
         :convert_text => true,
@@ -21,12 +21,15 @@ df = SASLib.read_sas7bdat("whatever.sas7bdat", Dict(
 module SASLib
 
 using StringEncodings
+#using DataFrames
 
 export readsas,
     ReaderConfig, Handler, openfile, readfile, close
 
 include("constants.jl")
 include("utils.jl")
+
+debug(msg) = println(msg)
 
 struct FileFormatError <: Exception
     message::AbstractString
@@ -50,16 +53,25 @@ struct ReaderConfig
         get(config, :convert_header_text, default_convert_header_text))
 end
 
+struct Column
+    col_id
+    name 
+    label
+    format
+    ctype 
+    length
+end
+
 mutable struct Handler
     io::IOStream
     config::ReaderConfig
     
     compression::AbstractString
-    column_names_strings::Array{AbstractString,1}
-    column_names::Array{AbstractString,1}
-    column_types::Array{AbstractString,1}
-    column_formats::Array{AbstractString,1}
-    columns::Array{AbstractString,1}
+    column_names_strings::Vector{AbstractString}
+    column_names::Vector{AbstractString}
+    column_types::Vector{UInt8}
+    column_formats::Vector{AbstractString}
+    columns::Vector{Column}
     
     current_page_data_subheader_pointers::Array{Any}
     cached_page::Array{UInt8,1}
@@ -100,6 +112,12 @@ mutable struct Handler
     mix_page_row_count
     lcs
     lcp
+
+    current_page_type
+    current_page_block_count
+    current_page_subheaders_count
+    column_count
+    creator_proc
     
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
@@ -113,28 +131,38 @@ struct subheader_pointer
     ptype
 end
 
+
 """
 Returns a Handler struct
 """
 function openfile(config::ReaderConfig) 
-    # info("Opening $(config.filename)")
-    Handler(config)
+    # debug("Opening $(config.filename)")
+    handler = Handler(config)
+    handler.compression = ""
+    handler.column_names_strings = []
+    handler.column_names = []
+    handler.columns = []
+    handler.column_formats = []
+    handler.current_page_data_subheader_pointers = []
+    return handler
 end
 
 function readfile(handler) 
-    info("Reading $(handler.config.filename)")
-    return handler  # TODO not returning any real data until later
+    debug("Reading $(handler.config.filename)")
+    return read_chunk(handler)
 end
 
 function closefile(handler) 
-    # info("Closing $(handler.config.filename)")
+    # debug("Closing $(handler.config.filename)")
     close(handler.io)
 end
 
 function readsas(filename; config = Dict())
     handler = openfile(ReaderConfig(filename, config))
     try
-        properties = _get_properties(handler)
+        _get_properties(handler)
+        _parse_metadata(handler)
+        # debug(handler.columns)
         return readfile(handler)
     finally
         closefile(handler)
@@ -171,7 +199,7 @@ function _read_bytes(handler, offset, len)
     if handler.cached_page == []
         seek(handler.io, offset)
         try
-            return read(handler.io, len)
+            return Base.read(handler.io, len)
         catch
             throw(FileFormatError("Unable to read $(len) bytes from file position $(offset)"))
         end
@@ -189,15 +217,15 @@ function _get_properties(handler)
 
     # read header section
     seekstart(handler.io)
-    handler.cached_page = read(handler.io, 288)
+    handler.cached_page = Base.read(handler.io, 288)
 
     # Check magic number
     if handler.cached_page[1:length(magic)] != magic
         throw(FileFormatError("magic number mismatch (not a SAS file?)"))
     end
-    info("good magic number")
+    debug("good magic number")
     
-    # Get alignment information
+    # Get alignment debugrmation
     align1, align2 = 0, 0
     buf = _read_bytes(handler, align_1_offset, align_1_length)
     if buf == u64_byte_checker_value
@@ -217,8 +245,8 @@ function _get_properties(handler)
         align1 = align_2_value
     end
     total_align = align1 + align2
-    info("successful reading alignment information")
-    info("buf = $buf, align1 = $align1, align2 = $align2, total_align=$total_align")
+    debug("successful reading alignment debugrmation")
+    debug("buf = $buf, align1 = $align1, align2 = $align2, total_align=$total_align")
 
     # Get endianness information
     buf = _read_bytes(handler, endianness_offset, endianness_length)
@@ -227,14 +255,14 @@ function _get_properties(handler)
     else
         handler.file_endianness = :BigEndian
     end
-    info("file_endianness = $(handler.file_endianness)")
+    debug("file_endianness = $(handler.file_endianness)")
     
     # Detect system-endianness and determine if byte swap will be required
     handler.sys_endianness = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
-    info("system endianess = $(handler.sys_endianness)")
+    debug("system endianess = $(handler.sys_endianness)")
 
     handler.byte_swap = handler.sys_endianness != handler.file_endianness
-    info("byte_swap = $(handler.byte_swap)")
+    debug("byte_swap = $(handler.byte_swap)")
         
     # Get encoding information
     buf = _read_bytes(handler, encoding_offset, encoding_length)[1]
@@ -243,7 +271,7 @@ function _get_properties(handler)
     else
         handler.file_encoding = "unknown (code=$buf)" 
     end
-    info("file_encoding = $(handler.file_encoding)")
+    debug("file_encoding = $(handler.file_encoding)")
 
     # Get platform information
     buf = _read_bytes(handler, platform_offset, platform_length)
@@ -254,68 +282,68 @@ function _get_properties(handler)
     else
         handler.platform = "unknown"
     end
-    info("platform = $(handler.platform)")
+    debug("platform = $(handler.platform)")
 
     buf = _read_bytes(handler, dataset_offset, dataset_length)
     handler.name = brstrip(buf, zero_space)
     if handler.config.convert_header_text
-        info("before decode: name = $(handler.name)")
+        debug("before decode: name = $(handler.name)")
         handler.name = decode(handler.name, handler.config.encoding)
-        info("after decode:  name = $(handler.name)")
+        debug("after decode:  name = $(handler.name)")
     end
 
     buf = _read_bytes(handler, file_type_offset, file_type_length)
     handler.file_type = brstrip(buf, zero_space)
     if handler.config.convert_header_text
-        info("before decode: file_type = $(handler.file_type)")
+        debug("before decode: file_type = $(handler.file_type)")
         handler.file_type = decode(handler.file_type, handler.config.encoding)
-        info("after decode:  file_type = $(handler.file_type)")
+        debug("after decode:  file_type = $(handler.file_type)")
     end
 
     # Timestamp is epoch 01/01/1960
     epoch =DateTime(1960, 1, 1, 0, 0, 0)
     x = _read_float(handler, date_created_offset + align1, date_created_length)
     handler.date_created = epoch + Base.Dates.Millisecond(round(x * 1000))
-    info("date created = $(x) => $(handler.date_created)")
+    debug("date created = $(x) => $(handler.date_created)")
     x = _read_float(handler, date_modified_offset + align1, date_modified_length)
     handler.date_modified = epoch + Base.Dates.Millisecond(round(x * 1000))
-    info("date modified = $(x) => $(handler.date_modified)")
+    debug("date modified = $(x) => $(handler.date_modified)")
     
     handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
 
     # Read the rest of the header into cached_page.
-    buf = read(handler.io, handler.header_length - 288)
+    buf = Base.read(handler.io, handler.header_length - 288)
     append!(handler.cached_page, buf)
     if length(handler.cached_page) != handler.header_length
         throw(FileFormatError("The SAS7BDAT file appears to be truncated."))
     end
 
     handler.page_length = _read_int(handler, page_size_offset + align1, page_size_length)
-    info("page_length = $(handler.page_length)")
+    debug("page_length = $(handler.page_length)")
 
     handler.page_count = _read_int(handler, page_count_offset + align1, page_count_length)
-    info("page_count = $(handler.page_count)")
+    debug("page_count = $(handler.page_count)")
     
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
     handler.sas_release = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         handler.sas_release = decode(handler.sas_release, handler.config.encoding)
     end
-    info("SAS Release = $(handler.sas_release)")
+    debug("SAS Release = $(handler.sas_release)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
     handler.server_type = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         handler.server_type = decode(handler.server_type, handler.config.encoding)
     end
-    info("server_type = $(handler.server_type)")
+    debug("server_type = $(handler.server_type)")
 
     buf = _read_bytes(handler, os_version_number_offset + total_align, os_version_number_length)
     handler.os_version = brstrip(buf, zero_space)
     if handler.config.convert_header_text
         handler.os_version = decode(handler.os_version, handler.config.encoding)
     end
-    info("os_version = $(handler.os_version)")
+    debug("os_version = $(handler.os_version)")
     
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
     buf = brstrip(buf, zero_space)
@@ -328,13 +356,13 @@ function _get_properties(handler)
             handler.os_name = decode(handler.os_name, handler.config.encoding)
         end
     end
-    info("os_name = $(handler.os_name)")
+    debug("os_name = $(handler.os_name)")
 end
 
 function _parse_metadata(handler)
     done = false
     while !done
-        handler.cached_page = read(handler.io, handler.page_length)
+        handler.cached_page = Base.read(handler.io, handler.page_length)
         if length(handler.cached_page) <= 0
             break
         end
@@ -346,27 +374,39 @@ function _parse_metadata(handler)
 end
 
 function _process_page_meta(handler)
+    debug("IN: _process_page_meta")
     _read_page_header(handler)  
-    pt = [page_meta_type, page_amd_type] + page_mix_types
+    pt = vcat([page_meta_type, page_amd_type], page_mix_types)
+    debug("  pt=$pt handler.current_page_type=$(handler.current_page_type)")
     if handler.current_page_type in pt
         _process_page_metadata(handler)
     end
-    return ((handler.current_page_type in [256] + page_mix_types) ||
+    debug("  condition var #1: handler.current_page_type=$(handler.current_page_type)")
+    debug("  condition var #2: page_mix_types=$(page_mix_types)")
+    debug("  condition var #3: handler.current_page_data_subheader_pointers=$(handler.current_page_data_subheader_pointers)")
+    return ((handler.current_page_type in vcat([256], page_mix_types)) ||
             (handler.current_page_data_subheader_pointers != []))
 end
 
 function _read_page_header(handler)
+    debug("IN: _read_page_header")
     bit_offset = handler.page_bit_offset
     tx = page_type_offset + bit_offset
     handler.current_page_type = _read_int(handler, tx, page_type_length)
+    debug("  bit_offset=$bit_offset tx=$tx handler.current_page_type=$(handler.current_page_type)")
     tx = block_count_offset + bit_offset
     handler.current_page_block_count = _read_int(handler, tx, block_count_length)
+    debug("  tx=$tx handler.current_page_block_count=$(handler.current_page_block_count)")
     tx = subheader_count_offset + bit_offset
     handler.current_page_subheaders_count = _read_int(handler, tx, subheader_count_length)
+    debug("  tx=$tx handler.current_page_subheaders_count=$(handler.current_page_subheaders_count)")
 end
 
 function _process_page_metadata(handler)
+    debug("IN: _process_page_metadata")
     bit_offset = handler.page_bit_offset
+    debug("  bit_offset=$bit_offset")
+    debug("  loop from 0 to $(handler.current_page_subheaders_count-1)")
     for i in 0:handler.current_page_subheaders_count-1
         pointer = _process_subheader_pointers(handler, subheader_pointers_offset + bit_offset, i)
         if pointer.length == 0
@@ -383,20 +423,36 @@ function _process_page_metadata(handler)
 end
 
 function _process_subheader_pointers(handler, offset, subheader_pointer_index)
-
+    debug("IN: _process_subheader_pointers")
+    debug("  offset=$offset")
+    debug("  subheader_pointer_index=$subheader_pointer_index")
+    
     total_offset = (offset + handler.subheader_pointer_length * subheader_pointer_index)
-
-    subheader_offset = _read_int(handler, total_offset, handler._int_length)
+    debug("  handler.subheader_pointer_length=$(handler.subheader_pointer_length)")
+    debug("  total_offset=$total_offset")
+    
+    subheader_offset = _read_int(handler, total_offset, handler.int_length)
+    debug("  subheader_offset=$subheader_offset")
     total_offset += handler.int_length
-
-    subheader_length = _read_int(handler, total_offset, handler._int_length)
-    total_offset += handler._int_length
-
+    debug("  total_offset=$total_offset")
+    
+    subheader_length = _read_int(handler, total_offset, handler.int_length)
+    debug("  subheader_length=$subheader_length")
+    total_offset += handler.int_length
+    debug("  total_offset=$total_offset")
+    
     subheader_compression = _read_int(handler, total_offset, 1)
+    debug("  subheader_compression=$subheader_compression")
     total_offset += 1
-
+    debug("  total_offset=$total_offset")
+    
     subheader_type = _read_int(handler, total_offset, 1)
 
+    debug("  returning subheader_offset=$subheader_offset")
+    debug("  returning subheader_length=$subheader_length")
+    debug("  returning subheader_compression=$subheader_compression")
+    debug("  returning subheader_type=$subheader_type")
+    
     return subheader_pointer(
                 subheader_offset, 
                 subheader_length, 
@@ -406,26 +462,42 @@ function _process_subheader_pointers(handler, offset, subheader_pointer_index)
 end
 
 function _read_subheader_signature(handler, offset)
-    return _read_bytes(handler, offset, handler._int_length)
+    debug("IN: _read_subheader_signature (offset=$offset)")
+    bytes = _read_bytes(handler, offset, handler.int_length)
+    debug("  bytes=$(bytes)")
+    return bytes
 end
 
 function _get_subheader_index(handler, signature, compression, ptype)
-    return get(subheader_signature_to_index, signature,
-        begin
-            f1 = ((compression == compressed_subheader_id) || (compression == 0))
-            f2 = (ptype == compressed_subheader_type)
-            if (handler.compression != "") && f1 && f2
-                index = index_dataSubheaderIndex
-            else
-                throw(FileFormatError("Unknown subheader signature $(signature)"))
-            end
-        end)
+    debug("IN: _get_subheader_index")
+    debug("  signature=$signature")
+    debug("  compression=$compression")
+    debug("  ptype=$ptype")
+    debug("  --- compare with ---")
+    debug("  compressed_subheader_id=$compressed_subheader_id")
+    debug("  compressed_subheader_type=$compressed_subheader_type")
+    val = get(subheader_signature_to_index, signature, nothing)
+    if val == nothing
+        f1 = ((compression == compressed_subheader_id) || (compression == 0))
+        debug("  f1=$f1")
+        f2 = (ptype == compressed_subheader_type)
+        debug("  f2=$f2")
+        if (handler.compression != "") && f1 && f2
+            val = index_dataSubheaderIndex
+        else
+            throw(FileFormatError("Unknown subheader signature $(signature)"))
+        end
+    end
+    return val
 end
 
 
 function _process_subheader(handler, subheader_index, pointer)
+    debug("IN: _process_subheader")
     offset = pointer.offset
     length = pointer.length
+    debug("  offset=$offset")
+    debug("  length=$length")    
 
     if subheader_index == index_rowSizeIndex
         processor = _process_rowsize_subheader
@@ -444,7 +516,7 @@ function _process_subheader(handler, subheader_index, pointer)
     elseif subheader_index == index_subheaderCountsIndex
         processor = _process_subheader_counts
     elseif subheader_index == index_dataSubheaderIndex
-        append!(handler.current_page_data_subheader_pointers, pointer)
+        push!(handler.current_page_data_subheader_pointers, pointer)
         return
     else
         throw(FileFormatError("unknown subheader index"))
@@ -453,6 +525,7 @@ function _process_subheader(handler, subheader_index, pointer)
 end
 
 function _process_rowsize_subheader(handler, offset, length)
+    debug("IN: _process_rowsize_subheader")
     int_len = handler.int_length
     lcs_offset = offset
     lcp_offset = offset
@@ -475,9 +548,22 @@ function _process_rowsize_subheader(handler, offset, length)
     handler.mix_page_row_count = _read_int(handler, offset + mx, int_len)
     handler.lcs = _read_int(handler, lcs_offset, 2)
     handler.lcp = _read_int(handler, lcp_offset, 2)
+
+    debug("  int_len=$int_len")
+    debug("  lcs_offset=$lcs_offset")
+    debug("  lcp_offset=$lcp_offset")
+    debug("  handler.row_length=$(handler.row_length)")
+    debug("  handler.row_count=$(handler.row_count)")
+    debug("  handler.col_count_p1=$(handler.col_count_p1)")
+    debug("  handler.col_count_p2=$(handler.col_count_p2)")
+    debug("  mx=$mx")
+    debug("  handler.mix_page_row_count=$(handler.mix_page_row_count)")
+    debug("  handler.lcs=$(handler.lcs)")
+    debug("  handler.lcp=$(handler.lcp)")
 end
 
 function _process_columnsize_subheader(handler, offset, length)
+    debug("IN: _process_columnsize_subheader")
     int_len = handler.int_length
     offset += int_len
     handler.column_count = _read_int(handler, offset, int_len)
@@ -488,32 +574,48 @@ end
 
 # Unknown purpose
 function _process_subheader_counts(handler, offset, length)
+    debug("IN: _process_subheader_counts")
 end
 
 function _process_columntext_subheader(handler, offset, length)
-
+    debug("IN: _process_columntext_subheader")
+    
     offset += handler.int_length
     text_block_size = _read_int(handler, offset, text_block_size_length)
+    debug("  before reading buf: text_block_size=$text_block_size")
+    debug("  before reading buf: offset=$offset")
 
     buf = _read_bytes(handler, offset, text_block_size)
     cname_raw = brstrip(buf[1:text_block_size], zero_space)
+    # debug("  cname_raw=$cname_raw")
     cname = cname_raw
-    if handler.convert_header_text
-        cname = decode(cname, handler.encoding)
+    if handler.config.convert_header_text
+        cname = decode(cname, handler.config.encoding)
     end
-    append!(handler.column_names_strings, cname)
+    # debug("  cname=$cname")    
+    push!(handler.column_names_strings, cname)
 
-    if length(column_names_strings) == 1
+    # debug("  handler.column_names_strings=$(handler.column_names_strings)")
+    # debug("  type=$(typeof(handler.column_names_strings))")
+    # debug("  content=$(handler.column_names_strings)")
+    # debug("  content=$(size(handler.column_names_strings))")
+
+    # TODO not sure why length() gave strange error; using size() is fine here
+    if size(handler.column_names_strings)[1] == 1
         compression_literal = ""
         for cl in compression_literals
             if cl in cname_raw
                 compression_literal = cl
+            end
+        end
         handler.compression = compression_literal
         offset -= handler.int_length
-
+        debug("  handler.compression=$(handler.compression)")    
+        
         offset1 = offset + 16
         if handler.U64
             offset1 += 4
+        end
 
         buf = _read_bytes(handler, offset1, handler.lcp)
         compression_literal = brstrip(buf, b"\x00")
@@ -539,11 +641,11 @@ function _process_columntext_subheader(handler, offset, length)
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcs)
-            handler.creator_proc = buf[1:self.lcp]
+            handler.creator_proc = buf[1:handler.lcp]
         else
             handler.creator_proc = nothing
         end
-        if handler.convert_header_text
+        if handler.config.convert_header_text
             if handler.creator_proc != nothing
                 handler.creator_proc = decode(creator_proc, handler.encoding)
             end
@@ -552,218 +654,242 @@ function _process_columntext_subheader(handler, offset, length)
 end
         
 
-# def _process_columnname_subheader(self, offset, length):
-# int_len = self._int_length
-# offset += int_len
-# column_name_pointers_count = (length - 2 * int_len - 12) // 8
-# for i in range(column_name_pointers_count):
-#     text_subheader = offset + const.column_name_pointer_length * \
-#         (i + 1) + const.column_name_text_subheader_offset
-#     col_name_offset = offset + const.column_name_pointer_length * \
-#         (i + 1) + const.column_name_offset_offset
-#     col_name_length = offset + const.column_name_pointer_length * \
-#         (i + 1) + const.column_name_length_offset
+function _process_columnname_subheader(handler, offset, length)
+    debug("IN: _process_columnname_subheader")
+    int_len = handler.int_length
+    offset += int_len
+    debug(" offset=$offset")
+    column_name_pointers_count = fld(length - 2 * int_len - 12, 8)
+    debug(" column_name_pointers_count=$column_name_pointers_count")
+    for i in 1:column_name_pointers_count
+        text_subheader = offset + column_name_pointer_length * 
+            (i + 1) + column_name_text_subheader_offset
+        debug(" i=$i text_subheader=$text_subheader")
+        col_name_offset = offset + column_name_pointer_length * 
+            (i + 1) + column_name_offset_offset
+        debug(" i=$i col_name_offset=$col_name_offset")
+        col_name_length = offset + column_name_pointer_length * 
+            (i + 1) + column_name_length_offset
+        debug(" i=$i col_name_length=$col_name_length")
+            
+        idx = _read_int(handler,
+            text_subheader, column_name_text_subheader_length)
+        debug(" i=$i idx=$idx")
+        col_offset = _read_int(handler,
+            col_name_offset, column_name_offset_length)
+        debug(" i=$i col_offset=$col_offset")
+        col_len = _read_int(handler,
+            col_name_length, column_name_length_length)
+        debug(" i=$i col_len=$col_len")
+            
+        name_str = handler.column_names_strings[idx+1]
+        debug(" i=$i name_str=$name_str")
 
-#     idx = self._read_int(
-#         text_subheader, const.column_name_text_subheader_length)
-#     col_offset = self._read_int(
-#         col_name_offset, const.column_name_offset_length)
-#     col_len = self._read_int(
-#         col_name_length, const.column_name_length_length)
+        name = name_str[col_offset+1:col_offset + col_len]
+        push!(handler.column_names, name)
+        debug(" i=$i name=$name")
+    end
+end
 
-#     name_str = self.column_names_strings[idx]
-#     self.column_names.append(name_str[col_offset:col_offset + col_len])
+function _process_columnattributes_subheader(handler, offset, length)
+    debug("IN: _process_columnattributes_subheader")
+    int_len = handler.int_length
+    column_attributes_vectors_count = fld(length - 2 * int_len - 12, int_len + 8)
+    handler.column_types = fill(column_type_none, column_attributes_vectors_count)
+    handler.column_data_lengths = fill(0::Int64, column_attributes_vectors_count)
+    handler.column_data_offsets = fill(0::Int64, column_attributes_vectors_count)
+    for i in 0:column_attributes_vectors_count-1
+        col_data_offset = (offset + int_len +
+                        column_data_offset_offset +
+                        i * (int_len + 8))
+        col_data_len = (offset + 2 * int_len +
+                        column_data_length_offset +
+                        i * (int_len + 8))
+        col_types = (offset + 2 * int_len +
+                    column_type_offset + i * (int_len + 8))
 
-# def _process_columnattributes_subheader(self, offset, length):
-# int_len = self._int_length
-# column_attributes_vectors_count = (
-#     length - 2 * int_len - 12) // (int_len + 8)
-# self.column_types = np.empty(
-#     column_attributes_vectors_count, dtype=np.dtype('S1'))
-# self._column_data_lengths = np.empty(
-#     column_attributes_vectors_count, dtype=np.int64)
-# self._column_data_offsets = np.empty(
-#     column_attributes_vectors_count, dtype=np.int64)
-# for i in range(column_attributes_vectors_count):
-#     col_data_offset = (offset + int_len +
-#                        const.column_data_offset_offset +
-#                        i * (int_len + 8))
-#     col_data_len = (offset + 2 * int_len +
-#                     const.column_data_length_offset +
-#                     i * (int_len + 8))
-#     col_types = (offset + 2 * int_len +
-#                  const.column_type_offset + i * (int_len + 8))
+        x = _read_int(handler, col_data_offset, int_len)
+        handler.column_data_offsets[i+1] = x
 
-#     x = self._read_int(col_data_offset, int_len)
-#     self._column_data_offsets[i] = x
+        x = _read_int(handler, col_data_len, column_data_length_length)
+        handler.column_data_lengths[i+1] = x
 
-#     x = self._read_int(col_data_len, const.column_data_length_length)
-#     self._column_data_lengths[i] = x
+        x = _read_int(handler, col_types, column_type_length)
+        if x == 1
+            handler.column_types[i+1] = column_type_decimal
+        else
+            handler.column_types[i+1] = column_type_string
+        end
+    end
+end
 
-#     x = self._read_int(col_types, const.column_type_length)
-#     if x == 1:
-#         self.column_types[i] = b'd'
-#     else:
-#         self.column_types[i] = b's'
+function _process_columnlist_subheader(handler, offset, length)
+    debug("IN: _process_columnlist_subheader")
+    # unknown purpose
+end
 
-# def _process_columnlist_subheader(self, offset, length):
-# # unknown purpose
-# pass
+function _process_format_subheader(handler, offset, length)
+    debug("IN: _process_format_subheader")
+    int_len = handler.int_length
+    text_subheader_format = (
+        offset +
+        column_format_text_subheader_index_offset +
+        3 * int_len)
+    col_format_offset = (offset +
+                        column_format_offset_offset +
+                        3 * int_len)
+    col_format_len = (offset +
+                    column_format_length_offset +
+                    3 * int_len)
+    text_subheader_label = (
+        offset +
+        column_label_text_subheader_index_offset +
+        3 * int_len)
+    col_label_offset = (offset +
+                        column_label_offset_offset +
+                        3 * int_len)
+    col_label_len = offset + column_label_length_offset + 3 * int_len
 
-# def _process_format_subheader(self, offset, length):
-# int_len = self._int_length
-# text_subheader_format = (
-#     offset +
-#     const.column_format_text_subheader_index_offset +
-#     3 * int_len)
-# col_format_offset = (offset +
-#                      const.column_format_offset_offset +
-#                      3 * int_len)
-# col_format_len = (offset +
-#                   const.column_format_length_offset +
-#                   3 * int_len)
-# text_subheader_label = (
-#     offset +
-#     const.column_label_text_subheader_index_offset +
-#     3 * int_len)
-# col_label_offset = (offset +
-#                     const.column_label_offset_offset +
-#                     3 * int_len)
-# col_label_len = offset + const.column_label_length_offset + 3 * int_len
+    x = _read_int(handler, text_subheader_format,
+                    column_format_text_subheader_index_length)
+    # TODO length() didn't work => ERROR: MethodError: objects of type Int32 are not callable
+    format_idx = min(x, size(handler.column_names_strings)[1] - 1)
 
-# x = self._read_int(text_subheader_format,
-#                    const.column_format_text_subheader_index_length)
-# format_idx = min(x, len(self.column_names_strings) - 1)
+    format_start = _read_int(handler, 
+        col_format_offset, column_format_offset_length)
+    format_len = _read_int(handler, 
+        col_format_len, column_format_length_length)
 
-# format_start = self._read_int(
-#     col_format_offset, const.column_format_offset_length)
-# format_len = self._read_int(
-#     col_format_len, const.column_format_length_length)
+    label_idx = _read_int(handler, 
+        text_subheader_label,
+        column_label_text_subheader_index_length)
+    # TODO length() didn't work => ERROR: MethodError: objects of type Int32 are not callable
+    label_idx = min(label_idx, size(handler.column_names_strings)[1] - 1)
 
-# label_idx = self._read_int(
-#     text_subheader_label,
-#     const.column_label_text_subheader_index_length)
-# label_idx = min(label_idx, len(self.column_names_strings) - 1)
+    label_start = _read_int(handler, 
+        col_label_offset, column_label_offset_length)
+    label_len = _read_int(handler, col_label_len,
+                            column_label_length_length)
 
-# label_start = self._read_int(
-#     col_label_offset, const.column_label_offset_length)
-# label_len = self._read_int(col_label_len,
-#                            const.column_label_length_length)
+    label_names = handler.column_names_strings[label_idx+1]
+    column_label = label_names[label_start+1: label_start + label_len]
+    format_names = handler.column_names_strings[format_idx+1]
+    column_format = format_names[format_start+1: format_start + format_len]
+    # TODO length() didn't work => ERROR: MethodError: objects of type Int32 are not callable
+    # TODO this is an awkward counter.... let's refactor later
+    current_column_number = size(handler.columns)[1]+1
 
-# label_names = self.column_names_strings[label_idx]
-# column_label = label_names[label_start: label_start + label_len]
-# format_names = self.column_names_strings[format_idx]
-# column_format = format_names[format_start: format_start + format_len]
-# current_column_number = len(self.columns)
+    col = Column(
+        current_column_number,
+        handler.column_names[current_column_number],
+        column_label,
+        column_format,
+        handler.column_types[current_column_number],
+        handler.column_data_lengths[current_column_number])
 
-# col = _column()
-# col.col_id = current_column_number
-# col.name = self.column_names[current_column_number]
-# col.label = column_label
-# col.format = column_format
-# col.ctype = self.column_types[current_column_number]
-# col.length = self._column_data_lengths[current_column_number]
+    push!(handler.column_formats, column_format)
+    push!(handler.columns, col)
+end
 
-# self.column_formats.append(column_format)
-# self.columns.append(col)
+function read_chunk(handler, nrows=0)
+    debug("IN: read_chunk")
+    
+    if (nrows == 0) && (handler.config.chunksize > 0)
+        nrows = handler.config.chunksize
+    elseif nrows == 0
+        nrows = handler.row_count
+    end
 
-# def read(self, nrows=None):
+    if length(handler.column_types) == 0
+        throw(FileFormatError("No columns to parse from file"))
+    end
 
-# if (nrows is None) and (self.chunksize is not None):
-#     nrows = self.chunksize
-# elif nrows is None:
-#     nrows = self.row_count
+    if handler.current_row_in_file_index >= handler.row_count
+        return nothing
+    end
 
-# if len(self.column_types) == 0:
-#     self.close()
-#     raise EmptyDataError("No columns to parse from file")
+    m = handler.row_count - handler.current_row_in_file_index
+    if nrows > m
+        nrows = m
+    end
 
-# if self._current_row_in_file_index >= self.row_count:
-#     return None
+    nd = (handler.column_types == b"d").sum()
+    ns = (handler.column_types == b"s").sum()
 
-# m = self.row_count - self._current_row_in_file_index
-# if nrows > m:
-#     nrows = m
+    handler.string_chunk = fill("", (ns, nrows))
+    handler.byte_chunk = fill(0::UInt8, (nd, 8 * nrows))
 
-# nd = (self.column_types == b'd').sum()
-# ns = (self.column_types == b's').sum()
+    handler.current_row_in_chunk_index = 0
+    # parser = Parser(handler)
+    # read_data(parser, nrows)
 
-# self._string_chunk = np.empty((ns, nrows), dtype=np.object)
-# self._byte_chunk = np.empty((nd, 8 * nrows), dtype=np.uint8)
+    rslt = handler._chunk_to_dataframe()
+    return rslt
+end
 
-# self._current_row_in_chunk_index = 0
-# p = Parser(self)
-# p.read(nrows)
+function _read_next_page(handler)
+    debug("IN: _read_next_page")
+    handler.current_page_data_subheader_pointers = []
+    handler.cached_page = Base.read(handler.io, handler.page_length)
+    if length(handler.cached_page) <= 0
+        return true
+    elseif length(handler.cached_page) != handler.page_length
+        throw(FileFormatError("Failed to read complete page from file ($(length(handler.cached_page)) of $(handler.page_length) bytes"))
+    end
+    handler._read_page_header()
+    if handler._current_page_type == page_meta_type
+        handler._process_page_metadata()
+    end
+    pt = [page_meta_type, page_data_type]
+    pt += [page_mix_types]
+    if ! (handler.current_page_type in pt)
+        return handler._read_next_page()
+    end
+    return false
+end
 
-# rslt = self._chunk_to_dataframe()
-# if self.index is not None:
-#     rslt = rslt.set_index(self.index)
+function _chunk_to_dataframe(handler)
+    debug("IN: _chunk_to_dataframe")
+    
+    n = handler.current_row_in_chunk_index
+    m = handler.current_row_in_file_index
+    ix = range(m - n, m)
+    #TODO rslt = pd.DataFrame(index=ix)
+    rslt = DataFrame()
 
-# return rslt
+    # origin = Date(1960, 1, 1)
+    # js, jb = 1, 1
+    # for j in 1:handler.column_count
 
-# def _read_next_page(self):
-# self._current_page_data_subheader_pointers = []
-# self.cached_page = self._path_or_buf.read(self._page_length)
-# if len(self.cached_page) <= 0:
-#     return True
-# elif len(self.cached_page) != self._page_length:
-#     self.close()
-#     msg = ("failed to read complete page from file "
-#            "(read {:d} of {:d} bytes)")
-#     raise ValueError(msg.format(len(self.cached_page),
-#                                 self._page_length))
+    #     name = handler.column_names[j]
 
-# self._read_page_header()
-# if self._current_page_type == const.page_meta_type:
-#     self._process_page_metadata()
-# pt = [const.page_meta_type, const.page_data_type]
-# pt += [const.page_mix_types]
-# if self._current_page_type not in pt:
-#     return self._read_next_page()
-
-# return False
-
-# def _chunk_to_dataframe(self):
-
-# n = self._current_row_in_chunk_index
-# m = self._current_row_in_file_index
-# ix = range(m - n, m)
-# rslt = pd.DataFrame(index=ix)
-
-# js, jb = 0, 0
-# for j in range(self.column_count):
-
-#     name = self.column_names[j]
-
-#     if self.column_types[j] == b'd':
-#         rslt[name] = self._byte_chunk[jb, :].view(
-#             dtype=self.byte_order + 'd')
-#         rslt[name] = np.asarray(rslt[name], dtype=np.float64)
-#         if self.convert_dates:
-#             unit = None
-#             if self.column_formats[j] in const.sas_date_formats:
-#                 unit = 'd'
-#             elif self.column_formats[j] in const.sas_datetime_formats:
-#                 unit = 's'
-#             if unit:
-#                 rslt[name] = pd.to_datetime(rslt[name], unit=unit,
-#                                             origin="1960-01-01")
-#         jb += 1
-#     elif self.column_types[j] == b's':
-#         rslt[name] = self._string_chunk[js, :]
-#         if self.convert_text and (self.encoding is not None):
-#             rslt[name] = rslt[name].str.decode(
-#                 self.encoding or self.default_encoding)
-#         if self.blank_missing:
-#             ii = rslt[name].str.len() == 0
-#             rslt.loc[ii, name] = np.nan
-#         js += 1
-#     else:
-#         self.close()
-#         raise ValueError("unknown column type %s" %
-#                          self.column_types[j])
-
-# return rslt
-
+    #     if handler.column_types[j] == b"d"  # number, date, or datetime
+    #         rslt[name] = handler.byte_chunk[jb, :].view(
+    #             dtype=handler.byte_order + 'd')
+    #         rslt[name] = np.asarray(rslt[name], dtype=np.float64)
+    #         if handler.convert_dates
+    #             if handler.column_formats[j] in sas_date_formats
+    #                 rslt[name] = origin + Day(rslt[name])
+    #             elseif handler.column_formats[j] in sas_datetime_formats
+    #                 rslt[name] = origin + Second(rslt[name])
+    #             end
+    #         end
+    #         jb += 1
+    #     elseif handler.column_types[j] == b"s"   # string
+    #         rslt[name] = handler.string_chunk[js, :]
+    #         if handler.convert_text 
+    #             rslt[name] = decode(rslt[name], handler.encoding)
+    #         end
+    #         if handler.blank_missing
+    #             ii = length(rslt[name]) == 0
+    #             rslt.loc[ii, name] = np.nan  #TODO what is this?
+    #         end
+    #         js += 1
+    #     else
+    #         throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
+    #     end
+    # end
+    return rslt
+end
 
 end # module

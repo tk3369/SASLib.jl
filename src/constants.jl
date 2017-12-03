@@ -1,6 +1,6 @@
 # default settings
 const default_encoding = "UTF-8"
-const default_chunksize = 1
+const default_chunksize = 0
 const default_convert_dates = true
 const default_convert_empty_string_to_missing = true
 const default_convert_text = true
@@ -13,7 +13,7 @@ const magic = [
          b"\x09\xc7\x31\x8c\x18\x1f\x10\x11" ]
 
 const align_1_checker_value = b"3"
-const align_1_offset = 32^
+const align_1_offset = 32
 const align_1_length = 1
 const align_1_value = 4
 const u64_byte_checker_value = b"3"
@@ -181,3 +181,7 @@ const sas_datetime_formats = ["DATETIME", "DTWKDATX",
                         "DTYEAR", "TOD", "MDYAMPM"]
 
 const zero_space = b"\x00 "
+
+const column_type_none    = 0x00
+const column_type_decimal = 0x01
+const column_type_string  = 0x02
