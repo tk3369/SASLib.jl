@@ -5,7 +5,9 @@ const default_convert_dates = true
 const default_convert_empty_string_to_missing = true
 const default_convert_text = true
 const default_convert_header_text = true
+const default_blank_missing = true
 
+# interesting... using semicolons would make it into a 1-dimensional array
 const magic = [
          b"\x00\x00\x00\x00\x00\x00\x00\x00"  ;
          b"\x00\x00\x00\x00\xc2\xea\x81\x60"  ;

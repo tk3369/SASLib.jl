@@ -1,13 +1,12 @@
 """
-Sample usage
+Example
 
 ```julia
 import SASLib
-df = SASLib.read_sas7bdat("whatever.sas7bdat")
-```
 
-```julia
-df = SASLib.read_sas7bdat("whatever.sas7bdat", Dict(
+df = readsas("whatever.sas7bdat")
+
+df = readsas("whatever.sas7bdat", Dict(
         :encoding => "UTF-8"
         :chunksize => 0,
         :convert_dates => true,
@@ -20,8 +19,10 @@ df = SASLib.read_sas7bdat("whatever.sas7bdat", Dict(
 """
 module SASLib
 
+version = "0.1"
+
 using StringEncodings
-#using DataFrames
+using DataFrames
 
 export readsas,
     ReaderConfig, Handler, openfile, readfile, close
@@ -29,7 +30,7 @@ export readsas,
 include("constants.jl")
 include("utils.jl")
 
-debug(msg) = println(msg)
+debug(msg) = true; #println(msg)
 
 struct FileFormatError <: Exception
     message::AbstractString
@@ -44,13 +45,15 @@ struct ReaderConfig
     convert_empty_string_to_missing::Bool
     convert_text::Bool
     convert_header_text::Bool
+    blank_missing::Bool
     ReaderConfig(filename, config = Dict()) = new(filename, 
         get(config, :encoding, default_encoding),
         get(config, :chunksize, default_chunksize),
         get(config, :convert_dates, default_convert_dates), 
         get(config, :convert_empty_string_to_missing, default_convert_empty_string_to_missing),
         get(config, :convert_text, default_convert_text), 
-        get(config, :convert_header_text, default_convert_header_text))
+        get(config, :convert_header_text, default_convert_header_text),
+        get(config, :blank_missing, default_blank_missing))
 end
 
 struct Column
@@ -118,6 +121,10 @@ mutable struct Handler
     current_page_subheaders_count
     column_count
     creator_proc
+
+    byte_chunk::Array{UInt8, 2}
+    string_chunk::Array{String, 2}
+    current_row_in_chunk_index
     
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
@@ -144,6 +151,9 @@ function openfile(config::ReaderConfig)
     handler.columns = []
     handler.column_formats = []
     handler.current_page_data_subheader_pointers = []
+    handler.current_row_in_file_index = 0
+    handler.current_row_in_chunk_index = 0
+    handler.current_row_on_page_index = 0
     return handler
 end
 
@@ -647,7 +657,7 @@ function _process_columntext_subheader(handler, offset, length)
         end
         if handler.config.convert_header_text
             if handler.creator_proc != nothing
-                handler.creator_proc = decode(creator_proc, handler.encoding)
+                handler.creator_proc = decode(creator_proc, handler.config.encoding)
             end
         end
     end
@@ -663,13 +673,13 @@ function _process_columnname_subheader(handler, offset, length)
     debug(" column_name_pointers_count=$column_name_pointers_count")
     for i in 1:column_name_pointers_count
         text_subheader = offset + column_name_pointer_length * 
-            (i + 1) + column_name_text_subheader_offset
+            i + column_name_text_subheader_offset
         debug(" i=$i text_subheader=$text_subheader")
         col_name_offset = offset + column_name_pointer_length * 
-            (i + 1) + column_name_offset_offset
+            i + column_name_offset_offset
         debug(" i=$i col_name_offset=$col_name_offset")
         col_name_length = offset + column_name_pointer_length * 
-            (i + 1) + column_name_length_offset
+            i + column_name_length_offset
         debug(" i=$i col_name_length=$col_name_length")
             
         idx = _read_int(handler,
@@ -799,31 +809,38 @@ function read_chunk(handler, nrows=0)
     elseif nrows == 0
         nrows = handler.row_count
     end
+    debug("nrows = $nrows")
 
     if length(handler.column_types) == 0
         throw(FileFormatError("No columns to parse from file"))
     end
-
+    debug("column_types = $(handler.column_types)")
+    
+    debug("current_row_in_file_index = $(handler.current_row_in_file_index)")    
     if handler.current_row_in_file_index >= handler.row_count
         return nothing
     end
 
+    debug("row_count = $(handler.row_count)")    
     m = handler.row_count - handler.current_row_in_file_index
     if nrows > m
         nrows = m
     end
-
-    nd = (handler.column_types == b"d").sum()
-    ns = (handler.column_types == b"s").sum()
-
-    handler.string_chunk = fill("", (ns, nrows))
-    handler.byte_chunk = fill(0::UInt8, (nd, 8 * nrows))
+    debug("nrows = $(nrows)")    
+    
+    # TODO not the most efficient but normally it should be ok for non-wide tables
+    nd = count(x -> x == column_type_decimal, handler.column_types)
+    ns = count(x -> x == column_type_string,  handler.column_types)
+    
+    debug("nd = $nd (number of decimal columns)")
+    debug("ns = $ns (number of string columns)")    
+    handler.string_chunk = fill("", (Int64(ns), Int64(nrows)))
+    handler.byte_chunk = fill(UInt8(0), (Int64(nd), Int64(8 * nrows))) # 8-byte values
 
     handler.current_row_in_chunk_index = 0
-    # parser = Parser(handler)
-    # read_data(parser, nrows)
+    read_data(handler, nrows)
 
-    rslt = handler._chunk_to_dataframe()
+    rslt = _chunk_to_dataframe(handler)
     return rslt
 end
 
@@ -857,39 +874,268 @@ function _chunk_to_dataframe(handler)
     #TODO rslt = pd.DataFrame(index=ix)
     rslt = DataFrame()
 
-    # origin = Date(1960, 1, 1)
-    # js, jb = 1, 1
-    # for j in 1:handler.column_count
+    origin = Date(1960, 1, 1)
+    js, jb = 1, 1
+    debug("handler.column_names=$(handler.column_names)")
+    for j in 1:handler.column_count
 
-    #     name = handler.column_names[j]
+        name = Symbol(handler.column_names[j])
 
-    #     if handler.column_types[j] == b"d"  # number, date, or datetime
-    #         rslt[name] = handler.byte_chunk[jb, :].view(
-    #             dtype=handler.byte_order + 'd')
-    #         rslt[name] = np.asarray(rslt[name], dtype=np.float64)
-    #         if handler.convert_dates
-    #             if handler.column_formats[j] in sas_date_formats
-    #                 rslt[name] = origin + Day(rslt[name])
-    #             elseif handler.column_formats[j] in sas_datetime_formats
-    #                 rslt[name] = origin + Second(rslt[name])
-    #             end
-    #         end
-    #         jb += 1
-    #     elseif handler.column_types[j] == b"s"   # string
-    #         rslt[name] = handler.string_chunk[js, :]
-    #         if handler.convert_text 
-    #             rslt[name] = decode(rslt[name], handler.encoding)
-    #         end
-    #         if handler.blank_missing
-    #             ii = length(rslt[name]) == 0
-    #             rslt.loc[ii, name] = np.nan  #TODO what is this?
-    #         end
-    #         js += 1
-    #     else
-    #         throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
-    #     end
-    # end
+        if handler.column_types[j] == column_type_decimal  # number, date, or datetime
+            debug("  String: size=$(size(handler.byte_chunk))")
+            debug("  Decimal: column $j, name $name, size=$(size(handler.byte_chunk[jb, :]))")
+            bytes = handler.byte_chunk[jb, :]
+            if j == 1  #debug only
+                debug("  bytes=$bytes")
+            end
+            # convert to 8-byte values (UInt64)
+            values = [bytes[i:i+8-1] for i in 1:8:length(bytes)]
+            if j == 1 #debug only
+                debug("  values=$values")
+            end
+            # convert to Float64
+            values = map(x -> reinterpret(Float64, x)[1], values)
+            if j == 1 #debug only
+                debug("  reinterpreted values=$values")
+            end
+            # TODO may need to do byte_swap here... 
+            #values = bswap.(values)
+            #rslt[name] = bswap(rslt[name])
+            rslt[name] = values
+            if handler.config.convert_dates
+                if handler.column_formats[j] in sas_date_formats
+                    # TODO had to convert to Array... refactor?
+                    rslt[name] = origin + Dates.Day.(Array(round.(Integer, rslt[name])))
+                elseif handler.column_formats[j] in sas_datetime_formats
+                    rslt[name] = origin + Dates.Second.(Array(round.(Integer, rslt[name])))
+                end
+            end
+            jb += 1
+        elseif handler.column_types[j] == column_type_string
+            debug("  String: size=$(size(handler.string_chunk))")
+            debug("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
+            rslt[name] = handler.string_chunk[js, :]
+            # TODO don't we always want to convert?  seems unnecessary.
+            # if handler.config.convert_text 
+            #     rslt[name] = decode.(rslt[name], handler.config.encoding)
+            #     #rslt[name] = map(x -> decode(x, handler.config.encoding), rslt[name])
+            # end
+            # TODO need to convert "" to missing?
+            # if handler.config.blank_missing
+            #     ii = length(rslt[name]) == 0
+            #     rslt.loc[ii, name] = np.nan  #TODO what is this?
+            # end
+            js += 1
+        else
+            throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
+        end
+        debug("  rslt[name] = $(rslt[name])")
+    end
     return rslt
+end
+
+# from sas.pyx 
+function read_data(handler, nrows)
+    debug("IN: read_data, nrows=$nrows")
+    for i in 1:nrows
+        done = readline(handler)
+        if done
+            break
+        end
+    end
+    # update the parser... no need, everything is in handler
+    # handler._current_row_on_page_index = self.current_row_on_page_index
+    # handler._current_row_in_chunk_index = self.current_row_in_chunk_index
+    # handler._current_row_in_file_index = self.current_row_in_file_index
+end
+
+# consider renaming this function to avoid confusion
+function read_next_page(handler)
+    done = _read_next_page(handler)
+    if done
+        handler.cached_page = []
+    else
+        update_next_page(handler)
+    end
+    return done
+end
+
+function update_next_page(handler)
+    handler.current_row_on_page_index = 0
+end
+
+function readline(handler)
+    debug("IN: readline")
+
+    bit_offset = handler.page_bit_offset
+    subheader_pointer_length = handler.subheader_pointer_length
+    
+    # If there is no page, go to the end of the header and read a page.
+    if handler.cached_page == []
+        debug("  no cached page... seeking past header")
+        seek(handler.io, handler.header_length)
+        debug("  reading next page")
+        done = read_next_page(handler)
+        if done
+            debug("  no page! returning")
+            return true
+        end
+    end
+
+    # Loop until a data row is read
+    debug("  start loop")
+    while true
+        if handler.current_page_type == page_meta_type
+            debug("    page type == page_meta_type")
+            flag = handler.current_row_on_page_index >= handler.current_page_data_subheader_pointers_len
+            if flag
+                debug("    reading next page")
+                done = read_next_page(handler)
+                if done
+                    debug("    all done, returning #1")
+                    return true
+                end
+                continue
+            end
+            current_subheader_pointer = 
+                handler.current_page_data_subheader_pointers[handler.current_row_on_page_index]
+                debug("    current_subheader_pointer = $(current_subheader_pointer)")
+                process_byte_array_with_data(handler,
+                    current_subheader_pointer.offset,
+                    current_subheader_pointer.length)
+            return false
+        elseif (handler.current_page_type == page_mix_types[1] ||
+                handler.current_page_type == page_mix_types[2])
+            debug("    page type == page_mix_types_1/2")
+            align_correction = (bit_offset + subheader_pointers_offset +
+                                handler.current_page_subheaders_count *
+                                subheader_pointer_length)
+            debug("    align_correction = $align_correction")
+            align_correction = align_correction % 8
+            debug("    align_correction = $align_correction")
+            offset = bit_offset + align_correction
+            debug("    offset = $offset")
+            offset += subheader_pointers_offset
+            debug("    offset = $offset")
+            offset += (handler.current_page_subheaders_count *
+                    subheader_pointer_length)
+            debug("    offset = $offset")
+            debug("    handler.current_row_on_page_index = $(handler.current_row_on_page_index)")
+            debug("    handler.row_length = $(handler.row_length)")
+            offset += handler.current_row_on_page_index * handler.row_length
+            debug("    offset = $offset")
+            process_byte_array_with_data(handler, offset, handler.row_length)
+            mn = min(handler.row_count, handler.mix_page_row_count)
+            debug("    handler.current_row_on_page_index=$(handler.current_row_on_page_index)")
+            debug("    mn = $mn")
+            if handler.current_row_on_page_index == mn
+                debug("    reading next page")
+                done = read_next_page(handler)
+                if done
+                    debug("    all done, returning #2")
+                    return true
+                end
+            end
+            return false
+        elseif handler.current_page_type == page_data_type
+            debug("    page type == page_data_type")
+            process_byte_array_with_data(handler,
+                bit_offset + subheader_pointers_offset +
+                handler.current_row_on_page_index * handler.row_length,
+                handler.row_length)
+            debug("    handler.current_row_on_page_index=$(handler.current_row_on_page_index)")
+            debug("    handler.current_page_block_count=$(handler.current_page_block_count)")
+            flag = (handler.current_row_on_page_index == handler.current_page_block_count)
+            if flag
+                debug("    reading next page")
+                done = read_next_page(handler)
+                if done
+                    debug("    all done, returning #3")
+                    return true
+                end
+            end
+            return false
+        else
+            throw(FileFormatError("unknown page type: $(handler.current_page_type)"))
+        end
+    end
+end
+
+function process_byte_array_with_data(handler, offset, length)
+
+    debug("IN: process_byte_array_with_data, offset=$offset, length=$length")
+
+    # Original code below.  Julia type is already Vector{UInt8}
+    # source = np.frombuffer(
+    #     handler.cached_page[offset:offset + length], dtype=np.uint8)
+    source = handler.cached_page[offset+1:offset+length]
+
+    # TODO decompression 
+    # if handler.decompress != NULL and (length < handler.row_length)
+    debug("  length=$length")
+    debug("  handler.row_length=$(handler.row_length)")
+    if length < handler.row_length
+        debug("decompress required")
+        # source = decompress(handler, handler.row_length, source)
+    end
+
+    current_row = handler.current_row_in_chunk_index
+    column_types = handler.column_types
+    lengths = handler.column_data_lengths
+    offsets = handler.column_data_offsets
+    byte_chunk = handler.byte_chunk
+    string_chunk = handler.string_chunk
+    s = 8 * current_row
+    js = 1
+    jb = 1
+    debug("  current_row = $current_row")
+    debug("  column_types = $column_types")
+    debug("  lengths = $lengths")
+    debug("  offsets = $offsets")
+    debug("  s = $s")
+    debug("  handler.file_endianness = $(handler.file_endianness)")
+    
+    for j in 1:handler.column_count
+        lngt = lengths[j]
+        if lngt == 0
+            break
+        end
+        if j == 1
+            debug("  lngt = $lngt")
+        end
+        start = offsets[j]
+        ct = column_types[j]
+        if ct == column_type_decimal
+            # decimal
+            if handler.file_endianness == :LittleEndian
+                m = s + 8 - lngt
+                if j == 1
+                    debug("  m = $m")
+                end
+            else
+                m = s
+                if j == 1
+                    debug("  m = $m")
+                end
+            end
+            for k in 1:lngt
+                byte_chunk[jb, m + k] = source[start + k]
+                if j == 1
+                    debug("  jb=$jb, m+k=$(m+k), start=$start, start+k=$(start+k)")
+                end
+            end
+            jb += 1
+        elseif column_types[j] == column_type_string
+            # string
+            string_chunk[js, current_row+1] = strip(decode(source[start + 1:(
+                start + lngt)], handler.config.encoding), ' ')
+            js += 1
+        end
+    end
+
+    handler.current_row_on_page_index += 1
+    handler.current_row_in_chunk_index += 1
+    handler.current_row_in_file_index += 1
 end
 
 end # module
