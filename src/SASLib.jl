@@ -715,7 +715,7 @@ function _process_columnname_subheader(handler, offset, length)
         name_str = handler.column_names_strings[idx+1]
         debug(" i=$i name_str=$name_str")
 
-        name = name_str[col_offset+1:col_offset + col_len]
+        name = name_str[col_offset:col_offset + col_len + 1]
         push!(handler.column_names, name)
         debug(" i=$i name=$name")
     end
@@ -909,7 +909,7 @@ function _chunk_to_dataframe(handler)
             debug("  String: size=$(size(handler.byte_chunk))")
             debug("  Decimal: column $j, name $name, size=$(size(handler.byte_chunk[jb, :]))")
             bytes = handler.byte_chunk[jb, :]
-            if j == 1  && length(values) < 100  #debug only
+            if j == 1  && length(bytes) < 100  #debug only
                 debug("  bytes=$bytes")
             end
             # convert to 8-byte values (UInt64)
