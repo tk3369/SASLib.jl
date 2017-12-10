@@ -30,7 +30,24 @@ export readsas,
 include("constants.jl")
 include("utils.jl")
 
-debug(msg) = true; #println(msg)
+# debug facility
+enable_debug = false
+function debugon() 
+    global enable_debug
+    enable_debug = true
+end
+function debugoff()
+    global enable_debug
+    enable_debug = false
+end
+function debug(msg) 
+    if enable_debug 
+        println(msg)
+    end
+end
+
+# store history of handler for debugging purpose
+history = []
 
 struct FileFormatError <: Exception
     message::AbstractString
@@ -173,6 +190,9 @@ function readsas(filename; config = Dict())
         _get_properties(handler)
         _parse_metadata(handler)
         # debug(handler.columns)
+        if enable_debug
+            push!(history, handler)
+        end
         return readfile(handler)
     finally
         closefile(handler)
@@ -853,14 +873,14 @@ function _read_next_page(handler)
     elseif length(handler.cached_page) != handler.page_length
         throw(FileFormatError("Failed to read complete page from file ($(length(handler.cached_page)) of $(handler.page_length) bytes"))
     end
-    handler._read_page_header()
+    _read_page_header(handler)
     if handler._current_page_type == page_meta_type
-        handler._process_page_metadata()
+        _process_page_metadata(handler)
     end
     pt = [page_meta_type, page_data_type]
     pt += [page_mix_types]
     if ! (handler.current_page_type in pt)
-        return handler._read_next_page()
+        return _read_next_page(handler)
     end
     return false
 end
