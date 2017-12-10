@@ -953,7 +953,9 @@ function _chunk_to_dataframe(handler)
         else
             throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
         end
-        debug("  rslt[name] = $(rslt[name])")
+        if length(rslt[name]) < 100  #don't kill the screen with too much data
+            debug("  rslt[name] = $(rslt[name])")
+        end
     end
     return rslt
 end
