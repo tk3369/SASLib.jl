@@ -712,10 +712,10 @@ function _process_columnname_subheader(handler, offset, length)
             col_name_length, column_name_length_length)
         debug(" i=$i col_len=$col_len")
             
-        name_str = handler.column_names_strings[idx]
+        name_str = handler.column_names_strings[idx+1]
         debug(" i=$i name_str=$name_str")
 
-        name = name_str[col_offset+1:col_offset + col_len]
+        name = name_str[col_offset+2:col_offset + col_len + 1]
         push!(handler.column_names, name)
         debug(" i=$i name=$name")
     end
