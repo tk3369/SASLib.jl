@@ -877,8 +877,12 @@ function _read_next_page(handler)
     if handler.current_page_type == page_meta_type
         _process_page_metadata(handler)
     end
+    debug("  page_meta_type=$page_meta_type")
+    debug("  page_data_type=$page_data_type")
+    debug("  page_mix_types=$page_mix_types")
     pt = [page_meta_type, page_data_type]
-    pt += [page_mix_types]
+    append!(pt, page_mix_types)
+    debug("  pt=$pt")
     if ! (handler.current_page_type in pt)
         return _read_next_page(handler)
     end
