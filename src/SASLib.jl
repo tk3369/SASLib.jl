@@ -923,7 +923,9 @@ function _chunk_to_dataframe(handler)
                 debug("  reinterpreted values=$values")
             end
             # TODO may need to do byte_swap here... 
-            #values = bswap.(values)
+            if handler.byte_swap
+                values = bswap.(values)
+            end
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
             if handler.config.convert_dates
