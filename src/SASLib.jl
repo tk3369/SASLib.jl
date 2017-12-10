@@ -909,17 +909,17 @@ function _chunk_to_dataframe(handler)
             debug("  String: size=$(size(handler.byte_chunk))")
             debug("  Decimal: column $j, name $name, size=$(size(handler.byte_chunk[jb, :]))")
             bytes = handler.byte_chunk[jb, :]
-            if j == 1  #debug only
+            if j == 1  && length(values) < 100  #debug only
                 debug("  bytes=$bytes")
             end
             # convert to 8-byte values (UInt64)
             values = [bytes[i:i+8-1] for i in 1:8:length(bytes)]
-            if j == 1 #debug only
+            if j == 1 && length(values) < 100  #debug only
                 debug("  values=$values")
             end
             # convert to Float64
             values = map(x -> reinterpret(Float64, x)[1], values)
-            if j == 1 #debug only
+            if j == 1 && length(values) < 100  #debug only
                 debug("  reinterpreted values=$values")
             end
             # TODO may need to do byte_swap here... 
