@@ -874,7 +874,7 @@ function _read_next_page(handler)
         throw(FileFormatError("Failed to read complete page from file ($(length(handler.cached_page)) of $(handler.page_length) bytes"))
     end
     _read_page_header(handler)
-    if handler._current_page_type == page_meta_type
+    if handler.current_page_type == page_meta_type
         _process_page_metadata(handler)
     end
     pt = [page_meta_type, page_data_type]
