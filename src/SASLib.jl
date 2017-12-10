@@ -86,8 +86,8 @@ mutable struct Handler
     io::IOStream
     config::ReaderConfig
     
-    compression::AbstractString
-    column_names_strings::Vector{AbstractString}
+    compression::Vector{UInt8}
+    column_names_strings::Vector{Vector{UInt8}}
     column_names::Vector{AbstractString}
     column_types::Vector{UInt8}
     column_formats::Vector{AbstractString}
@@ -162,7 +162,7 @@ Returns a Handler struct
 function openfile(config::ReaderConfig) 
     # debug("Opening $(config.filename)")
     handler = Handler(config)
-    handler.compression = ""
+    handler.compression = b""
     handler.column_names_strings = []
     handler.column_names = []
     handler.columns = []
@@ -447,7 +447,7 @@ function _process_page_metadata(handler)
         end
         subheader_signature = _read_subheader_signature(handler, pointer.offset)
         subheader_index = (
-            _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.ptype))
+            _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.ptype, i))
         _process_subheader(handler, subheader_index, pointer)
     end
 end
@@ -498,21 +498,19 @@ function _read_subheader_signature(handler, offset)
     return bytes
 end
 
-function _get_subheader_index(handler, signature, compression, ptype)
-    debug("IN: _get_subheader_index")
+function _get_subheader_index(handler, signature, compression, ptype, idx)
+    debug("IN: _get_subheader_index (idx=$idx)")
     debug("  signature=$signature")
-    debug("  compression=$compression")
-    debug("  ptype=$ptype")
-    debug("  --- compare with ---")
-    debug("  compressed_subheader_id=$compressed_subheader_id")
-    debug("  compressed_subheader_type=$compressed_subheader_type")
+    debug("  compression=$compression <-> compressed_subheader_id=$compressed_subheader_id")
+    debug("  ptype=$ptype <-> compressed_subheader_type=$compressed_subheader_type")
     val = get(subheader_signature_to_index, signature, nothing)
+    debug("  val=$val")
     if val == nothing
         f1 = ((compression == compressed_subheader_id) || (compression == 0))
         debug("  f1=$f1")
         f2 = (ptype == compressed_subheader_type)
         debug("  f2=$f2")
-        if (handler.compression != "") && f1 && f2
+        if (handler.compression != b"") && f1 && f2
             val = index_dataSubheaderIndex
         else
             throw(FileFormatError("Unknown subheader signature $(signature)"))
@@ -617,12 +615,13 @@ function _process_columntext_subheader(handler, offset, length)
 
     buf = _read_bytes(handler, offset, text_block_size)
     cname_raw = brstrip(buf[1:text_block_size], zero_space)
-    # debug("  cname_raw=$cname_raw")
+    debug("  cname_raw=$cname_raw")
     cname = cname_raw
-    if handler.config.convert_header_text
-        cname = decode(cname, handler.config.encoding)
-    end
-    # debug("  cname=$cname")    
+    # TK: do not decode at this time.... do it after extracting by column
+    # if handler.config.convert_header_text
+    #     cname = decode(cname, handler.config.encoding)
+    # end
+    debug("  cname=$cname")
     push!(handler.column_names_strings, cname)
 
     # debug("  handler.column_names_strings=$(handler.column_names_strings)")
@@ -634,7 +633,7 @@ function _process_columntext_subheader(handler, offset, length)
     if size(handler.column_names_strings)[1] == 1
         compression_literal = ""
         for cl in compression_literals
-            if cl in cname_raw
+            if contains(cname_raw, cl)
                 compression_literal = cl
             end
         end
@@ -677,7 +676,7 @@ function _process_columntext_subheader(handler, offset, length)
         end
         if handler.config.convert_header_text
             if handler.creator_proc != nothing
-                handler.creator_proc = decode(creator_proc, handler.config.encoding)
+                handler.creator_proc = decode(handler.creator_proc, handler.config.encoding)
             end
         end
     end
@@ -687,8 +686,10 @@ end
 function _process_columnname_subheader(handler, offset, length)
     debug("IN: _process_columnname_subheader")
     int_len = handler.int_length
+    debug(" int_len=$int_len")
+    debug(" offset=$offset")    
     offset += int_len
-    debug(" offset=$offset")
+    debug(" offset=$offset (after adding int_len)")
     column_name_pointers_count = fld(length - 2 * int_len - 12, 8)
     debug(" column_name_pointers_count=$column_name_pointers_count")
     for i in 1:column_name_pointers_count
@@ -714,8 +715,11 @@ function _process_columnname_subheader(handler, offset, length)
             
         name_str = handler.column_names_strings[idx+1]
         debug(" i=$i name_str=$name_str")
-
-        name = name_str[col_offset+2:col_offset + col_len + 1]
+        
+        name = name_str[col_offset+1:col_offset + col_len]
+        if handler.config.convert_header_text
+            name = decode(name, handler.config.encoding)
+        end
         push!(handler.column_names, name)
         debug(" i=$i name=$name")
     end
@@ -805,6 +809,9 @@ function _process_format_subheader(handler, offset, length)
     column_label = label_names[label_start+1: label_start + label_len]
     format_names = handler.column_names_strings[format_idx+1]
     column_format = format_names[format_start+1: format_start + format_len]
+    if handler.config.convert_header_text
+        column_format = decode(column_format, handler.config.encoding)
+    end
     # TODO length() didn't work => ERROR: MethodError: objects of type Int32 are not callable
     # TODO this is an awkward counter.... let's refactor later
     current_column_number = size(handler.columns)[1]+1
@@ -933,7 +940,8 @@ function _chunk_to_dataframe(handler)
                     # TODO had to convert to Array... refactor?
                     rslt[name] = origin + Dates.Day.(Array(round.(Integer, rslt[name])))
                 elseif handler.column_formats[j] in sas_datetime_formats
-                    rslt[name] = origin + Dates.Second.(Array(round.(Integer, rslt[name])))
+                    # TODO probably have to deal with timezone somehow
+                    rslt[name] = DateTime(origin) + Dates.Second.(Array(round.(Integer, rslt[name])))
                 end
             end
             jb += 1
@@ -1015,7 +1023,7 @@ function readline(handler)
     while true
         if handler.current_page_type == page_meta_type
             debug("    page type == page_meta_type")
-            flag = handler.current_row_on_page_index >= handler.current_page_data_subheader_pointers_len
+            flag = handler.current_row_on_page_index >= length(handler.current_page_data_subheader_pointers)
             if flag
                 debug("    reading next page")
                 done = read_next_page(handler)
@@ -1026,7 +1034,7 @@ function readline(handler)
                 continue
             end
             current_subheader_pointer = 
-                handler.current_page_data_subheader_pointers[handler.current_row_on_page_index]
+                handler.current_page_data_subheader_pointers[handler.current_row_on_page_index+1]
                 debug("    current_subheader_pointer = $(current_subheader_pointer)")
                 process_byte_array_with_data(handler,
                     current_subheader_pointer.offset,
@@ -1104,6 +1112,7 @@ function process_byte_array_with_data(handler, offset, length)
     debug("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
         debug("decompress required")
+        throw(FileFormatError("Sorry, decompression not supported yet"))
         # source = decompress(handler, handler.row_length, source)
     end
 

@@ -1,0 +1,155 @@
+good magic number
+successful reading alignment debugrmation
+buf = UInt8[0x32], align1 = 0, align2 = 0, total_align=0
+file_endianness = LittleEndian
+system endianess = LittleEndian
+byte_swap = false
+file_encoding = wlatin1
+platform = windows
+before decode: name = UInt8[0x54, 0x45, 0x53, 0x54, 0x32]
+after decode:  name = TEST2
+before decode: file_type = UInt8[0x44, 0x41, 0x54, 0x41]
+after decode:  file_type = DATA
+date created = 1.769361652455219e9 => 2016-01-25T17:20:52.455
+date modified = 1.769361652455219e9 => 2016-01-25T17:20:52.455
+page_length = 65536
+page_count = 2
+SAS Release = 9.0401M1
+server_type = Linux
+os_version = 2.6.32-573.7.1.e
+os_name = x86_64
+IN: _process_page_meta
+IN: _read_page_header
+  bit_offset=16 tx=16 handler.current_page_type=0
+  tx=18 handler.current_page_block_count=117
+  tx=20 handler.current_page_subheaders_count=117
+  pt=[0, 1024, 512, 640] handler.current_page_type=0
+IN: _process_page_metadata
+  bit_offset=16
+  loop from 0 to 116
+IN: _process_subheader_pointers
+  offset=24
+  subheader_pointer_index=0
+  handler.subheader_pointer_length=12
+  total_offset=24
+  subheader_offset=65056
+  total_offset=28
+  subheader_length=480
+  total_offset=32
+  subheader_compression=0
+  total_offset=33
+  returning subheader_offset=65056
+  returning subheader_length=480
+  returning subheader_compression=0
+  returning subheader_type=1
+IN: _read_subheader_signature (offset=65056)
+  bytes=UInt8[0xf7, 0xf7, 0xf7, 0xf7]
+IN: _get_subheader_index
+  signature=UInt8[0xf7, 0xf7, 0xf7, 0xf7]
+  compression=0
+  ptype=1
+  --- compare with ---
+  compressed_subheader_id=4
+  compressed_subheader_type=1
+IN: _process_subheader
+  offset=65056
+  length=480
+IN: _process_rowsize_subheader
+  int_len=4
+  lcs_offset=65410
+  lcp_offset=65434
+  handler.row_length=809
+  handler.row_count=10
+  handler.col_count_p1=100
+  handler.col_count_p2=0
+  mx=60
+  handler.mix_page_row_count=67
+  handler.lcs=0
+  handler.lcp=8
+IN: _process_subheader_pointers
+  offset=24
+  subheader_pointer_index=1
+  handler.subheader_pointer_length=12
+  total_offset=36
+  subheader_offset=65044
+  total_offset=40
+  subheader_length=12
+  total_offset=44
+  subheader_compression=0
+  total_offset=45
+  returning subheader_offset=65044
+  returning subheader_length=12
+  returning subheader_compression=0
+  returning subheader_type=1
+IN: _read_subheader_signature (offset=65044)
+  bytes=UInt8[0xf6, 0xf6, 0xf6, 0xf6]
+IN: _get_subheader_index
+  signature=UInt8[0xf6, 0xf6, 0xf6, 0xf6]
+  compression=0
+  ptype=1
+  --- compare with ---
+  compressed_subheader_id=4
+  compressed_subheader_type=1
+IN: _process_subheader
+  offset=65044
+  length=12
+IN: _process_columnsize_subheader
+IN: _process_subheader_pointers
+  offset=24
+  subheader_pointer_index=2
+  handler.subheader_pointer_length=12
+  total_offset=48
+  subheader_offset=64740
+  total_offset=52
+  subheader_length=304
+  total_offset=56
+  subheader_compression=0
+  total_offset=57
+  returning subheader_offset=64740
+  returning subheader_length=304
+  returning subheader_compression=0
+  returning subheader_type=1
+IN: _read_subheader_signature (offset=64740)
+  bytes=UInt8[0x00, 0xfc, 0xff, 0xff]
+IN: _get_subheader_index
+  signature=UInt8[0x00, 0xfc, 0xff, 0xff]
+  compression=0
+  ptype=1
+  --- compare with ---
+  compressed_subheader_id=4
+  compressed_subheader_type=1
+IN: _process_subheader
+  offset=64740
+  length=304
+IN: _process_subheader_counts
+IN: _process_subheader_pointers
+  offset=24
+  subheader_pointer_index=3
+  handler.subheader_pointer_length=12
+  total_offset=60
+  subheader_offset=63072
+  total_offset=64
+  subheader_length=1668
+  total_offset=68
+  subheader_compression=0
+  total_offset=69
+  returning subheader_offset=63072
+  returning subheader_length=1668
+  returning subheader_compression=0
+  returning subheader_type=1
+IN: _read_subheader_signature (offset=63072)
+  bytes=UInt8[0xfd, 0xff, 0xff, 0xff]
+IN: _get_subheader_index
+  signature=UInt8[0xfd, 0xff, 0xff, 0xff]
+  compression=0
+  ptype=1
+  --- compare with ---
+  compressed_subheader_id=4
+  compressed_subheader_type=1
+IN: _process_subheader
+  offset=63072
+  length=1668
+IN: _process_columntext_subheader
+  before reading buf: text_block_size=1656
+  before reading buf: offset=63076
+  handler.compression=
