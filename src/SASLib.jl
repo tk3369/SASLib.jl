@@ -853,14 +853,15 @@ function read_chunk(handler, nrows=0)
     if nrows > m
         nrows = m
     end
-    debug("nrows = $(nrows)")    
+    debug("nrows = $(nrows)")   
+    info("Reading $nrows x $(length(handler.column_types)) data set") 
     
     # TODO not the most efficient but normally it should be ok for non-wide tables
     nd = count(x -> x == column_type_decimal, handler.column_types)
     ns = count(x -> x == column_type_string,  handler.column_types)
     
     debug("nd = $nd (number of decimal columns)")
-    debug("ns = $ns (number of string columns)")    
+    debug("ns = $ns (number of string columns)")
     handler.string_chunk = fill("", (Int64(ns), Int64(nrows)))
     handler.byte_chunk = fill(UInt8(0), (Int64(nd), Int64(8 * nrows))) # 8-byte values
 
@@ -1111,9 +1112,15 @@ function process_byte_array_with_data(handler, offset, length)
     debug("  length=$length")
     debug("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
-        debug("decompress required")
-        throw(FileFormatError("Sorry, decompression not supported yet"))
-        # source = decompress(handler, handler.row_length, source)
+        if handler.compression == rle_compression
+            debug("decompress using rle_compression method")
+            source = rle_decompress(handler.row_length, source)
+        elseif handler.compression == rdc_compression
+            debug("decompress using rdc_compression method")
+            source = rdc_decompress(handler.row_length, source)
+        else
+            throw(FileFormatError("Unknown compression method: $(handler.compression)"))
+        end
     end
 
     current_row = handler.current_row_in_chunk_index
@@ -1173,6 +1180,216 @@ function process_byte_array_with_data(handler, offset, length)
     handler.current_row_on_page_index += 1
     handler.current_row_in_chunk_index += 1
     handler.current_row_in_file_index += 1
+end
+
+# rle_decompress decompresses data using a Run Length Encoding
+# algorithm.  It is partially documented here:
+#
+# https://cran.r-project.org/web/packages/sas7bdat/vignettes/sas7bdat.pdf
+function rle_decompress(result_length,  inbuff::Vector{UInt8})
+
+    #control_byte::UInt8
+    #x::UInt8
+    result = zeros(UInt8, result_length)
+    rpos = 1
+    ipos = 1
+    len = length(inbuff)
+    #i, nbytes, end_of_first_byte
+
+    while ipos < len
+        control_byte = inbuff[ipos] & 0xF0
+        end_of_first_byte = inbuff[ipos] & 0x0F
+        ipos += 1
+
+        if control_byte == 0x00
+            if end_of_first_byte != 0
+                throw(FileFormatError("Unexpected non-zero end_of_first_byte"))
+            end
+            nbytes = inbuff[ipos] + 64
+            ipos += 1
+            for i in 1:nbytes
+                result[rpos] = inbuff[ipos]
+                rpos += 1
+                ipos += 1
+            end
+        elseif control_byte == 0x40
+            # not documented
+            nbytes = end_of_first_byte * 16
+            nbytes += inbuff[ipos]
+            ipos += 1
+            for i in 1:nbytes
+                result[rpos] = inbuff[ipos]
+                rpos += 1
+            end
+            ipos += 1
+        elseif control_byte == 0x60
+            nbytes = end_of_first_byte * 256 + inbuff[ipos] + 17
+            ipos += 1
+            for i in 1:nbytes
+                result[rpos] = 0x20
+                rpos += 1
+            end
+        elseif control_byte == 0x70
+            nbytes = end_of_first_byte * 256 + inbuff[ipos] + 17
+            ipos += 1
+            for i in 1:nbytes
+                result[rpos] = 0x00
+                rpos += 1
+            end
+        elseif control_byte == 0x80
+            nbytes = end_of_first_byte + 1
+            for i in 1:nbytes
+                result[rpos] = inbuff[ipos + i - 1]
+                rpos += 1
+            end
+            ipos += nbytes
+        elseif control_byte == 0x90
+            nbytes = end_of_first_byte + 17
+            for i in 1:nbytes
+                result[rpos] = inbuff[ipos + i - 1]
+                rpos += 1
+            end
+            ipos += nbytes
+        elseif control_byte == 0xA0
+            nbytes = end_of_first_byte + 33
+            for i in 1:nbytes
+                result[rpos] = inbuff[ipos + i - 1]
+                rpos += 1
+            end
+            ipos += nbytes
+        elseif control_byte == 0xB0
+            nbytes = end_of_first_byte + 49
+            for i in 1:nbytes
+                result[rpos] = inbuff[ipos + i - 1]
+                rpos += 1
+            end
+            ipos += nbytes
+        elseif control_byte == 0xC0
+            nbytes = end_of_first_byte + 3
+            x = inbuff[ipos]
+            ipos += 1
+            for i in 1:nbytes
+                result[rpos] = x
+                rpos += 1
+            end
+        elseif control_byte == 0xD0
+            nbytes = end_of_first_byte + 2
+            for i in 1:nbytes
+                result[rpos] = 0x40
+                rpos += 1
+            end
+        elseif control_byte == 0xE0
+            nbytes = end_of_first_byte + 2
+            for i in 1:nbytes
+                result[rpos] = 0x20
+                rpos += 1
+            end
+        elseif control_byte == 0xF0
+            nbytes = end_of_first_byte + 2
+            for i in 1:nbytes
+                result[rpos] = 0x00
+                rpos += 1
+            end
+        else
+            throw(FileFormatError("unknown control byte: $control_byte"))
+        end
+    end
+
+    if length(result) != result_length
+        throw(FileFormatError("RLE: $(length(result)) != $result_length"))
+    end
+
+    return result
+end
+
+
+# rdc_decompress decompresses data using the Ross Data Compression algorithm:
+#
+# http://collaboration.cmc.ec.gc.ca/science/rpn/biblio/ddj/Website/articles/CUJ/1992/9210/ross/ross.htm
+function rdc_decompress(result_length, inbuff::Vector{UInt8})
+
+    #uint8_t cmd
+    #uint16_t ctrl_bits, ofs, cnt
+    ctrl_mask = UInt16(0)
+    ipos = 1
+    rpos = 1
+    #k
+    #uint8_t [:] outbuff = np.zeros(result_length, dtype=np.uint8)
+    outbuff = zeros(UInt8, result_length)
+
+    while ipos <= length(inbuff)
+
+        ctrl_mask = ctrl_mask >> 1
+        if ctrl_mask == 0
+            ctrl_bits = (UInt16(inbuff[ipos]) << 8) + UInt16(inbuff[ipos + 1])
+            ipos += 2
+            ctrl_mask = 0x8000
+        end
+
+        if ctrl_bits & ctrl_mask == 0
+            outbuff[rpos] = inbuff[ipos]
+            ipos += 1
+            rpos += 1
+            continue
+        end
+
+        cmd = (inbuff[ipos] >> 4) & 0x0F
+        cnt = UInt16(inbuff[ipos] & 0x0F)
+        ipos += 1
+
+        # short RLE
+        if cmd == 0
+            cnt += 3
+            for k in 0:cnt-1
+                outbuff[rpos + k] = inbuff[ipos]
+            end
+            rpos += cnt
+            ipos += 1
+
+        # long RLE
+        elseif cmd == 1
+            cnt += UInt16(inbuff[ipos]) << 4
+            cnt += 19
+            ipos += 1
+            for k in 0:cnt-1
+                outbuff[rpos + k] = inbuff[ipos]
+            end
+            rpos += cnt
+            ipos += 1
+
+        # long pattern
+        elseif cmd == 2
+            ofs = cnt + 3
+            ofs += UInt16(inbuff[ipos]) << 4
+            ipos += 1
+            cnt = UInt16(inbuff[ipos])
+            ipos += 1
+            cnt += 16
+            for k in 0:cnt-1
+                outbuff[rpos + k] = outbuff[rpos - ofs + k]
+            end
+            rpos += cnt
+
+        # short pattern
+        elseif (cmd >= 3) & (cmd <= 15)
+            ofs = cnt + 3
+            ofs += UInt16(inbuff[ipos]) << 4
+            ipos += 1
+            for k in 0:cmd-1
+                outbuff[rpos + k] = outbuff[rpos - ofs + k]
+            end
+            rpos += cmd
+
+        else
+            throw(FileFormatError("unknown RDC command"))
+        end
+    end
+
+    if length(outbuff) != result_length
+        throw(FileFormatError("RDC: $(length(outbuff)) != $result_length"))
+    end
+
+    return outbuff
 end
 
 end # module
