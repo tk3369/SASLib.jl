@@ -56,26 +56,63 @@ end
 # Fast implementation to `reinterpret` int/floats
 # See https://discourse.julialang.org/t/newbie-question-convert-two-8-byte-values-into-a-single-16-byte-value/7662/5
 
-function signedint(a::UInt8) 
-    Int8(a)
+# Version a.  Original implementation... slow.
+"""
+Byte swap is needed only if file the array represent a different endianness
+than the system.  This function does not make any assumption and the caller
+is expected to pass `true` to the `swap` argument when needed.
+"""
+function convertfloat64a(bytes::Vector{UInt8}, swap::Bool)
+    values = [bytes[i:i+8-1] for i in 1:8:length(bytes)]
+    values = map(x -> reinterpret(Float64, x)[1], values)
+    swap ? bswap.(values) : values
 end
 
-function signedint(a::UInt8, b::UInt8; endianness=:BigEndian) 
-    x = (Int16(a) << 8) | Int16(b)
-    endianness == :BigEndian ? x : bswap(x)
+# Version b.  Should be a lot faster.  
+"""
+It turns out that `reinterpret` consider a single UInt64 as BigEndian 
+Hence it's necessary to swap bytes if the array is in LittleEndian convention.
+This function does not make any assumption and the caller
+is expected to pass `true` to the `swap` argument when needed.
+"""
+function convertfloat64b(bytes::Vector{UInt8}, endianess::Symbol)
+    v = endianess == :LittleEndian ? reverse(bytes) : bytes
+    c = convertint64.(v[1:8:end],v[2:8:end],v[3:8:end],v[4:8:end],
+            v[5:8:end], v[6:8:end], v[7:8:end], v[8:8:end])
+    r = reinterpret.(Float64, c)
+    endianess == :LittleEndian ? reverse(r) : r
 end
 
-function signedint(a::UInt8, b::UInt8, c::UInt8, d::UInt8; endianness=:BigEndian) 
-    x = (Int32(a) << 24) | (Int32(b) << 16) | (Int32(c) << 8) | Int32(d)
-    endianness == :BigEndian ? x : bswap(x)
+"""
+Take 8 bytes and convert them into a UInt64 type.  The order is preserved.
+"""
+function convertint64(a::UInt8,b::UInt8,c::UInt8,d::UInt8,e::UInt8,f::UInt8,g::UInt8,h::UInt8)
+    (UInt64(a) << 56) | (UInt64(b) << 48) | 
+    (UInt64(c) << 40) | (UInt64(d) << 32) | 
+    (UInt64(e) << 24) | (UInt64(f) << 16) | 
+    (UInt64(g) << 8)  |  UInt64(h)
 end
 
-function signedint(a::UInt8, b::UInt8, c::UInt8, d::UInt8,
-        e::UInt8, f::UInt8, g::UInt8, h::UInt8; endianness=:BigEndian) 
-    x = (Int64(a) << 56) | (Int64(b) << 48) | (Int64(c) << 40) | (Int64(d) << 32) | 
-        (Int64(e) << 24) | (Int64(f) << 16) | (Int64(g) << 8) | Int64(h)
-    endianness == :BigEndian ? x : bswap(x)
-end
+# function signedint(a::UInt8) 
+#     Int8(a)
+# end
+
+# function signedint(a::UInt8, b::UInt8; endianness=:BigEndian) 
+#     x = (Int16(a) << 8) | Int16(b)
+#     endianness == :BigEndian ? x : bswap(x)
+# end
+
+# function signedint(a::UInt8, b::UInt8, c::UInt8, d::UInt8; endianness=:BigEndian) 
+#     x = (Int32(a) << 24) | (Int32(b) << 16) | (Int32(c) << 8) | Int32(d)
+#     endianness == :BigEndian ? x : bswap(x)
+# end
+
+# function signedint(a::UInt8, b::UInt8, c::UInt8, d::UInt8,
+#         e::UInt8, f::UInt8, g::UInt8, h::UInt8; endianness=:BigEndian) 
+#     x = (Int64(a) << 56) | (Int64(b) << 48) | (Int64(c) << 40) | (Int64(d) << 32) | 
+#         (Int64(e) << 24) | (Int64(f) << 16) | (Int64(g) << 8) | Int64(h)
+#     endianness == :BigEndian ? x : bswap(x)
+# end
 
 # signedint(0x12) == reinterpret(Int8, 0x12)
 # signedint(0x12, 0x34; endianness=:LittleEndian) == reinterpret(Int16, [0x12, 0x34])[1]
@@ -84,18 +121,18 @@ end
 # signedint(0x12, 0x34, 0x22, 0x33, 0x55, 0x66, 0x77, 0x88; endianness=:LittleEndian) == 
 #     reinterpret(Int64, [0x12, 0x34, 0x22, 0x33, 0x55, 0x66, 0x77, 0x88])[1]
 
-function signedfloat(a::UInt8, b::UInt8, c::UInt8, d::UInt8,
-    e::UInt8, f::UInt8, g::UInt8, h::UInt8; endianness=:BigEndian) 
-    x = (UInt64(a) << 56) | (UInt64(b) << 48) | (UInt64(c) << 40) | (UInt64(d) << 32) | 
-        (UInt64(e) << 24) | (UInt64(f) << 16) | (UInt64(g) << 8) | UInt64(h)
-    # println(typeof(x))
-    # println(x)
-    y = endianness == :BigEndian ? x : bswap(x)
-    # println(y)
-    z = reinterpret(Float64, y)
-    # println(z)
-    z
-end
+# function signedfloat(a::UInt8, b::UInt8, c::UInt8, d::UInt8,
+#     e::UInt8, f::UInt8, g::UInt8, h::UInt8; endianness=:BigEndian) 
+#     x = (UInt64(a) << 56) | (UInt64(b) << 48) | (UInt64(c) << 40) | (UInt64(d) << 32) | 
+#         (UInt64(e) << 24) | (UInt64(f) << 16) | (UInt64(g) << 8) | UInt64(h)
+#     # println(typeof(x))
+#     # println(x)
+#     y = endianness == :BigEndian ? x : bswap(x)
+#     # println(y)
+#     z = reinterpret(Float64, y)
+#     # println(z)
+#     z
+# end
 # signedfloat(0x12, 0x34, 0x22, 0x33, 0x55, 0x66, 0x77, 0x88; endianness=:LittleEndian) ==
 #     reinterpret(Float64, [0x12, 0x34, 0x22, 0x33, 0x55, 0x66, 0x77, 0x88])[1]
 

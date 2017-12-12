@@ -920,20 +920,7 @@ function _chunk_to_dataframe(handler)
             if j == 1  && length(bytes) < 100  #debug only
                 debug("  bytes=$bytes")
             end
-            # convert to 8-byte values (UInt64)
-            values = [bytes[i:i+8-1] for i in 1:8:length(bytes)]
-            if j == 1 && length(values) < 100  #debug only
-                debug("  values=$values")
-            end
-            # convert to Float64
-            values = map(x -> reinterpret(Float64, x)[1], values)
-            if j == 1 && length(values) < 100  #debug only
-                debug("  reinterpreted values=$values")
-            end
-            # TODO may need to do byte_swap here... 
-            if handler.byte_swap
-                values = bswap.(values)
-            end
+            values = convertfloat64a(bytes, handler.byte_swap)
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
             if handler.config.convert_dates
