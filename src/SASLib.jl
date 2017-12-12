@@ -920,7 +920,8 @@ function _chunk_to_dataframe(handler)
             if j == 1  && length(bytes) < 100  #debug only
                 debug("  bytes=$bytes")
             end
-            values = convertfloat64a(bytes, handler.byte_swap)
+            #values = convertfloat64a(bytes, handler.byte_swap)
+            values = convertfloat64b(bytes, handler.file_endianness)
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
             if handler.config.convert_dates

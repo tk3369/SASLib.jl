@@ -75,7 +75,7 @@ Hence it's necessary to swap bytes if the array is in LittleEndian convention.
 This function does not make any assumption and the caller
 is expected to pass `true` to the `swap` argument when needed.
 """
-function convertfloat64b(bytes::Vector{UInt8}, endianess::Symbol)
+function convertfloat64b(bytes::Vector{UInt8}, endianess::Symbol) 
     v = endianess == :LittleEndian ? reverse(bytes) : bytes
     c = convertint64.(v[1:8:end],v[2:8:end],v[3:8:end],v[4:8:end],
             v[5:8:end], v[6:8:end], v[7:8:end], v[8:8:end])
