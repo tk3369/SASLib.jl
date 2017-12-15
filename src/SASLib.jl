@@ -1,3 +1,5 @@
+__precompile__()
+
 module SASLib
 
 version = "0.1"
@@ -5,15 +7,14 @@ version = "0.1"
 using StringEncodings
 using DataFrames
 
-export readsas,
-    ReaderConfig, Handler, openfile, readfile, close
+export readsas
 
 include("debug.jl")
 include("constants.jl")
 include("utils.jl")
 
 # store history of handler for debugging purpose
-history = []
+@debug history = []
 
 struct FileFormatError <: Exception
     message::AbstractString
@@ -122,11 +123,7 @@ mutable struct Handler
         config)
 end
 
-
-"""
-Returns a Handler struct
-"""
-function openfile(config::ReaderConfig) 
+function open(config::ReaderConfig) 
     # @debug("Opening $(config.filename)")
     handler = Handler(config)
     handler.compression = b""
@@ -138,41 +135,58 @@ function openfile(config::ReaderConfig)
     handler.current_row_in_file_index = 0
     handler.current_row_in_chunk_index = 0
     handler.current_row_on_page_index = 0
+    _get_properties(handler)
+    _parse_metadata(handler)
     return handler
 end
 
-function readfile(handler) 
-    @debug("Reading $(handler.config.filename)")
-    return read_chunk(handler)
+"""
+Open a SAS7BDAT data file.  The `config` parameter accepts the same 
+settings as described in `SASLib.readsas()` function.  Returns a
+handler object.
+"""
+function open(fname::AbstractString, config=Dict())
+    return open(ReaderConfig(fname, config))
 end
 
-function closefile(handler) 
+"""
+Read data from the `handler`.  If `nrows` is not specified, read the
+entire files content.  When called again, fetch the next `nrows` rows.
+"""
+function read(handler::Handler, nrows=0) 
+    @debug("Reading $(handler.config.filename)")
+    return read_chunk(handler, nrows)
+end
+
+"""
+Close the `handler` object.  This function effectively closes the
+underlying iostream.  It must be called if `open` and `read` 
+functions are used instead of the more convenient `readsas` function.
+"""
+function close(handler::Handler) 
     # @debug("Closing $(handler.config.filename)")
-    close(handler.io)
+    Base.close(handler.io)
 end
 
 """
 Read a SAS7BDAT file.  Optional keyword parameters include:
-
 * `:encoding`: character encoding for strings (default: "UTF-8")
 * `:convert_text`: convert text data to strings (default: true)
 * `:convert_header_text`: convert header text data to strings (default: true)
-
 """
-function readsas(filename; config = Dict())
-    handler = openfile(ReaderConfig(filename, config))
+function readsas(filename, config=Dict())
+    handler = nothing
     try
-        _get_properties(handler)
-        _parse_metadata(handler)
-        # @debug(handler.columns)
-        if enable_debug
-            push!(history, handler)
-        end
-        @time df = readfile(handler)
-        info("Read data set of size $(size(df))")
+        handler = open(ReaderConfig(filename, config))
+        @debug(push!(history, handler))
+        t1 = time()
+        df = read(handler)
+        t2 = time()
+        elapsed = round(t2 - t1, 3)
+        info("Read data set of size $(size(df)) in $elapsed seconds")
         return df
     finally
-        closefile(handler)
+        (handler != nothing) && close(handler)
     end
 end
 
