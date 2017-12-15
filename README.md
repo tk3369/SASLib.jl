@@ -5,7 +5,7 @@
 
 This is a port of Pandas' read_sas function.  
 
-Completed
+Porting Status
 - [x] read sas7bdat files
 - [ ] read xport files
 
