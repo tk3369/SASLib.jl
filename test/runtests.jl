@@ -10,8 +10,12 @@ using Base.Test
     end
 
     @testset "read data" begin
-        df = readsas("test1.sas7bdat")
-        @test size(df) == (10, 100)
+        files = filter(x -> endswith(x, "sas7bdat") && startswith(x, "test"), 
+            Base.Filesystem.readdir())
+        for f in files
+            df = readsas(f)
+            @test size(df) == (10, 100)
+        end
     end
 
 end
