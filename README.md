@@ -10,11 +10,11 @@ It is still a work in progress but at least it can read one test file :-)
 ## Example
 
 ```julia
-import SASLib
+using SASLib
 
-df = readsas("whatever.sas7bdat")
+df = readsas("test1.sas7bdat")
 
-df = readsas("whatever.sas7bdat", Dict(
+df = readsas("test1.sas7bdat"; config=Dict(
         :encoding => "UTF-8"
         :chunksize => 0,
         :convert_dates => true,
