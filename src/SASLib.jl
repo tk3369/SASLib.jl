@@ -179,7 +179,9 @@ function readsas(filename; config = Dict())
         if enable_debug
             push!(history, handler)
         end
-        return readfile(handler)
+        @time df = readfile(handler)
+        info("Read data set of size $(size(df))")
+        return df
     finally
         closefile(handler)
     end
@@ -1126,24 +1128,15 @@ function process_byte_array_with_data(handler, offset, length)
             # decimal
             if handler.file_endianness == :LittleEndian
                 m = s + 8 - lngt
-                if j == 1
-                    @debug("  m = $m")
-                end
             else
                 m = s
-                if j == 1
-                    @debug("  m = $m")
-                end
             end
-            for k in 1:lngt
-                byte_chunk[jb, m + k] = source[start + k]
-                if j == 1
-                    @debug("  jb=$jb, m+k=$(m+k), start=$start, start+k=$(start+k)")
-                end
-            end
+            # for k in 1:lngt
+            #     byte_chunk[jb, m + k] = source[start + k]
+            # end
+            byte_chunk[jb, m+1:m+lngt] = source[start+1:start+lngt]
             jb += 1
         elseif column_types[j] == column_type_string
-            # string
             string_chunk[js, current_row+1] = strip(decode(source[start + 1:(
                 start + lngt)], handler.config.encoding), ' ')
             js += 1

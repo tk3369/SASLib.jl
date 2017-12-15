@@ -56,6 +56,23 @@ end
 # Fast implementation to `reinterpret` int/floats
 # See https://discourse.julialang.org/t/newbie-question-convert-two-8-byte-values-into-a-single-16-byte-value/7662/5
 
+# count_a = 0
+# count_b = 0
+
+# # summary stats
+# function stat(kind) 
+#     if kind == :convertfloat
+#         return (count_a, count_b)
+#     end
+#     return nothing
+# end
+
+# function clearstat(kind)
+#     if kind == :convertfloat
+#         count_a, count_b = 0, 0
+#     end
+# end
+
 # Version a.  Original implementation... slow.
 """
 Byte swap is needed only if file the array represent a different endianness
@@ -63,6 +80,8 @@ than the system.  This function does not make any assumption and the caller
 is expected to pass `true` to the `swap` argument when needed.
 """
 function convertfloat64a(bytes::Vector{UInt8}, swap::Bool)
+    # global count_a
+    # count_a::Int64 += 1
     values = [bytes[i:i+8-1] for i in 1:8:length(bytes)]
     values = map(x -> reinterpret(Float64, x)[1], values)
     swap ? bswap.(values) : values
@@ -76,6 +95,8 @@ This function does not make any assumption and the caller
 is expected to pass `true` to the `swap` argument when needed.
 """
 function convertfloat64b(bytes::Vector{UInt8}, endianess::Symbol) 
+    # global count_b
+    # count_b::Int64 += 1
     v = endianess == :LittleEndian ? reverse(bytes) : bytes
     c = convertint64.(v[1:8:end],v[2:8:end],v[3:8:end],v[4:8:end],
             v[5:8:end], v[6:8:end], v[7:8:end], v[8:8:end])

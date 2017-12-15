@@ -1,10 +1,5 @@
 # debug facility
-enable_debug = false
-
-function setdebug(on::Bool) 
-    global enable_debug
-    enable_debug = on
-end
+const enable_debug = false
 
 macro debug(msg)
     return :( 
