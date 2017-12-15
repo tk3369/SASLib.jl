@@ -1,22 +1,3 @@
-"""
-Example
-
-```julia
-import SASLib
-
-df = readsas("whatever.sas7bdat")
-
-df = readsas("whatever.sas7bdat", Dict(
-        :encoding => "UTF-8"
-        :chunksize => 0,
-        :convert_dates => true,
-        :convert_empty_string_to_missing => true,
-        :convert_text => true,
-        :convert_header_text => true
-        ))
-```
-
-"""
 module SASLib
 
 version = "0.1"
@@ -170,6 +151,14 @@ function closefile(handler)
     close(handler.io)
 end
 
+"""
+Read a SAS7BDAT file.  Optional keyword parameters include:
+
+* `:encoding`: character encoding for strings (default: "UTF-8")
+* `:convert_text`: convert text data to strings (default: true)
+* `:convert_header_text`: convert header text data to strings (default: true)
+
+"""
 function readsas(filename; config = Dict())
     handler = openfile(ReaderConfig(filename, config))
     try
