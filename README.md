@@ -10,7 +10,7 @@ Porting Status
 - [ ] read xport files
 
 To-do
-- [ ] performance optimization (already better than Pandas but probably could still be improved)
+- [ ] performance optimization
 - [ ] better unit testing and coverage
 - [ ] better documentation
 
