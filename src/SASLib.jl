@@ -29,7 +29,7 @@ struct ReaderConfig
     convert_empty_string_to_missing::Bool
     convert_text::Bool
     convert_header_text::Bool
-    blank_missing::Bool
+    verbose::Bool
     ReaderConfig(filename, config = Dict()) = new(filename, 
         get(config, :encoding, default_encoding),
         get(config, :chunksize, default_chunksize),
@@ -37,7 +37,7 @@ struct ReaderConfig
         get(config, :convert_empty_string_to_missing, default_convert_empty_string_to_missing),
         get(config, :convert_text, default_convert_text), 
         get(config, :convert_header_text, default_convert_header_text),
-        get(config, :blank_missing, default_blank_missing))
+        get(config, :verbose, false))
 end
 
 struct Column
@@ -175,7 +175,7 @@ function close(handler::Handler)
 end
 
 """
-Read a SAS7BDAT file.  Optional keyword parameters include:
+Read a SAS7BDAT file.  
 * `:encoding`: character encoding for strings (default: "UTF-8")
 * `:convert_text`: convert text data to strings (default: true)
 * `:convert_header_text`: convert header text data to strings (default: true)
@@ -891,6 +891,8 @@ end
 function _read_next_page(handler)
     # @debug("IN: _read_next_page")
     handler.current_page += 1
+    handler.config.verbose && println("_read_next_page: current_page = $(handler.current_page)")
+
     handler.current_page_data_subheader_pointers = []
     handler.cached_page = Base.read(handler.io, handler.page_length)
     if length(handler.cached_page) <= 0
@@ -902,6 +904,8 @@ function _read_next_page(handler)
     if handler.current_page_type == page_meta_type
         _process_page_metadata(handler)
     end
+    handler.config.verbose && println("_read_next_page: current_page_type = $(handler.current_page_type)")
+    
     # @debug("  page_meta_type=$page_meta_type")
     # @debug("  page_data_type=$page_data_type")
     # @debug("  page_mix_types=$page_mix_types")
