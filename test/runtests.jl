@@ -14,8 +14,8 @@ using Base.Test
         files = filter(x -> endswith(x, "sas7bdat") && startswith(x, "test"), 
             Base.Filesystem.readdir())
         for f in files
-            df = readsas(f)
-            @test size(df) == (10, 100)
+            result = readsas(f)
+            @test size(result.dataframe) == (10, 100)
         end
     end
 
@@ -29,6 +29,15 @@ using Base.Test
         @test size(r, 1) == 4
         r = SASLib.read(handler, 5)  # should read only 3 rows even though we ask for 5
         @test size(r, 1) == 3
+    end
+
+    @testset "numeric" begin
+        result = readsas("test1.sas7bdat")
+        df = result.dataframe
+        @test sum(df[1:5,1]) == 2.066
+        @test count(isnan, df[:,1]) == 1
+        @test df[1:3,98] == [ "apple", "dog", "pear" ]
+        @test df[1:3,4] == [Date("1965-12-10"), Date("1977-03-07"), Date("1983-08-15")]
     end
 
 end

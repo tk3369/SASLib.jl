@@ -1,5 +1,5 @@
 # debug facility
-const enable_debug = false
+const enable_debug = true
 
 macro debug(msg)
     return :( 
@@ -9,4 +9,3 @@ macro debug(msg)
         end 
     )
 end
-
