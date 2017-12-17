@@ -2,7 +2,7 @@ from time import time
 from pandas import read_sas
 
 def perf_test1():
-    df = read_sas("test1.sas7bdat")
+    df = read_sas("numeric_1000000_2.sas7bdat")
 
 def benchmark(f, n):
     total = 0
@@ -11,9 +11,9 @@ def benchmark(f, n):
         f()
         t2 = time()
         elapsed = t2 - t1
-        print("{:d}: elapsed {:f} seconds".format(i, elapsed))
+        print("{:d}: elapsed {:f} seconds".format(i+1, elapsed))
         total += elapsed
 
-    print("Average: {:d} msec".format(int(total/n*1000)))
+    print("Average: {:f} seconds".format(int(total/n)))
 
 benchmark(perf_test1, 10)
