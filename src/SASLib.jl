@@ -5,7 +5,6 @@ module SASLib
 version = "0.1"
 
 using StringEncodings
-using DataFrames
 
 export readsas
 
@@ -22,7 +21,6 @@ struct FileFormatError <: Exception
     message::AbstractString
 end 
 
-# NOTE there's no "index" for Julia's DataFrame as compared to Pandas
 struct ReaderConfig 
     filename::AbstractString
     encoding::AbstractString
@@ -127,11 +125,6 @@ mutable struct Handler
         config)
 end
 
-struct SASData
-    dataframe::DataFrame
-    handler::Handler
-end
-
 function show(handler::Handler)
     return "Handler: config=$(handler.config) header_length=$header_length $page_length=page_length $page_count=$page_count"
 end
@@ -193,15 +186,15 @@ function readsas(filename, config=Dict())
         handler = open(ReaderConfig(filename, config))
         # @debug(push!(history, handler))
         t1 = time()
-        df = read(handler)
+        result = read(handler)
         t2 = time()
         elapsed = round(t2 - t1, 3)
-        info("Read data set of size $(size(df)) in $elapsed seconds")
-        return SASData(df, handler)
+        info("Read data set of size $(result[:nrows]) x $(result[:ncols]) in $elapsed seconds")
+        return result
     finally
         (handler != nothing) && close(handler)
     end
-    return DataFrame()
+    return Dict()
 end
 
 # Read a single float of the given width (4 or 8).
@@ -834,7 +827,7 @@ end
 function read_chunk(handler, nrows=0)
 
     # @debug("IN: read_chunk")
-    println(handler.config)
+    #println(handler.config)
     if (nrows == 0) && (handler.config.chunksize > 0)
         nrows = handler.config.chunksize
     elseif nrows == 0
@@ -844,13 +837,13 @@ function read_chunk(handler, nrows=0)
 
     if !isdefined(handler, :column_types)
         warn("No columns to parse from file")
-        return DataFrame()
+        return Dict()
     end
     # @debug("column_types = $(handler.column_types)")
     
     # @debug("current_row_in_file_index = $(handler.current_row_in_file_index)")    
     if handler.current_row_in_file_index >= handler.row_count
-        return DataFrame()
+        return Dict()
     end
 
     # @debug("row_count = $(handler.row_count)")    
@@ -881,15 +874,18 @@ function read_chunk(handler, nrows=0)
     rslt = _chunk_to_dataframe(handler)
     perf_chunk_to_data_frame = toq()
 
-    # summary
-    @printf "INFO: Number of pages           = %7d\n" handler.current_page
-    @printf "INFO: Page length               = %7d\n" handler.page_length
-    @printf "INFO: Number of decimal columns = %7d\n" nd
-    @printf "INFO: Number of string columns  = %7d\n" ns
-    @printf "PERF: read_data                 = %7.3f seconds\n" perf_read_data
-    @printf "PERF: _chunk_to_dataframe       = %7.3f seconds\n" perf_chunk_to_data_frame
-    
-    return rslt
+    return Dict(
+        :data => rslt, 
+        :nrows => nrows, 
+        :ncols => nd+ns, 
+        :filename => handler.config.filename,
+        :file_pagecount => handler.current_page,
+        :file_pagelength => Int64(handler.page_length),
+        :file_encoding => handler.file_encoding,
+        :file_endianness => handler.file_endianness,
+        :perf_readdata => perf_read_data,
+        :perf_typeconversion => perf_chunk_to_data_frame
+        )
 end
 
 function _read_next_page(handler)
@@ -924,9 +920,7 @@ function _chunk_to_dataframe(handler)
     
     n = handler.current_row_in_chunk_index
     m = handler.current_row_in_file_index
-    #ix = range(m - n, m)
-    #TODO rslt = pd.DataFrame(index=ix)
-    rslt = DataFrame()
+    rslt = Dict()
 
     origin = Date(1960, 1, 1)
     js, jb = 1, 1
@@ -1122,10 +1116,10 @@ function process_byte_array_with_data(handler, offset, length)
     # @debug("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
         if handler.compression == rle_compression
-            println("decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
+            #println("decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
             source = rle_decompress(handler.row_length, source)
         elseif handler.compression == rdc_compression
-            println("decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
+            #println("decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
             source = rdc_decompress(handler.row_length, source)
         else
             throw(FileFormatError("Unknown compression method: $(handler.compression)"))

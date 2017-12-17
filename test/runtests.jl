@@ -15,7 +15,7 @@ using Base.Test
             Base.Filesystem.readdir())
         for f in files
             result = readsas(f)
-            @test size(result.dataframe) == (10, 100)
+            @test (result[:nrows], result[:ncols]) == (10, 100)
         end
     end
 
@@ -23,21 +23,21 @@ using Base.Test
         fname = "test1.sas7bdat"  # 10 rows
         handler = SASLib.open(fname)
         @test handler.config.filename == fname
-        r = SASLib.read(handler, 3)  # read 3 rows
-        @test size(r, 1) == 3
-        r = SASLib.read(handler, 4)
-        @test size(r, 1) == 4
-        r = SASLib.read(handler, 5)  # should read only 3 rows even though we ask for 5
-        @test size(r, 1) == 3
+        result = SASLib.read(handler, 3)  # read 3 rows
+        @test result[:nrows] == 3
+        result = SASLib.read(handler, 4)
+        @test result[:nrows] == 4
+        result = SASLib.read(handler, 5)  # should read only 3 rows even though we ask for 5
+        @test result[:nrows] == 3
     end
 
     @testset "numeric" begin
         result = readsas("test1.sas7bdat")
-        df = result.dataframe
-        @test sum(df[1:5,1]) == 2.066
-        @test count(isnan, df[:,1]) == 1
-        @test df[1:3,98] == [ "apple", "dog", "pear" ]
-        @test df[1:3,4] == [Date("1965-12-10"), Date("1977-03-07"), Date("1983-08-15")]
+        df = result[:data]
+        @test sum(df[:Column1][1:5]) == 2.066
+        @test count(isnan, df[:Column1]) == 1
+        @test df[:Column98][1:3] == [ "apple", "dog", "pear" ]
+        @test df[:Column4][1:3] == [Date("1965-12-10"), Date("1977-03-07"), Date("1983-08-15")]
     end
 
 end
