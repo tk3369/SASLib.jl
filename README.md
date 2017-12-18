@@ -42,7 +42,9 @@ Dict{Symbol,Any} with 16 entries:
   :column_offsets       => [0, 600, 8, 16, 24, 609, 32, 40, 48, 618  …  536, 544, 552, 795, 560, 568, 576, 800, 584, 592]
 ```
 
-Fetch the data using the key `:data`.  The data is represented as a Dict object with the column symbol as the key.
+Number of columns and rows are returned as in `:ncols` and `:nrows` respectively.
+
+The data, reference by `:data` key, is represented as a Dict object with the column symbol as the key.
 
 ```juia
 julia> x[:data][:Column1]
