@@ -2,10 +2,10 @@
 const default_encoding = "UTF-8"
 const default_chunksize = 0
 const default_convert_dates = true
-const default_convert_empty_string_to_missing = true
+# const default_convert_empty_string_to_missing = true
 const default_convert_text = true
 const default_convert_header_text = true
-const default_blank_missing = true
+const default_verbose_level = 1  # little verbose by default
 
 # interesting... using semicolons would make it into a 1-dimensional array
 const magic = [
