@@ -16,27 +16,33 @@ To-do
 
 ## Examples
 
-Use the `readsas` function to read the file.
+Use the `readsas` function to read the file.  The result is a dictionary of various information about the file as well as the data itself.
 
 ```julia
 julia> using SASLib
 
 julia> x = readsas("test1.sas7bdat")
-INFO: Read data set of size 10 x 100 in 0.017 seconds
-Dict{Symbol,Any} with 10 entries:
-  :file_endianness     => :LittleEndian
-  :ncols               => 100
-  :filename            => "test1.sas7bdat"
-  :nrows               => 10
-  :perf_typeconversion => 0.00993576
-  :perf_readdata       => 0.00620258
-  :file_pagecount      => 1
-  :file_pagelength     => 65536
-  :data                => Dict{Any,Any}(Pair{Any,Any}(:Column60, [2987.0, 8194.0, 9820.0, 8252.0, 9640.0, 9168.0, 7547.0, 1419.0, 4884.0, NaN]),…
-  :file_encoding       => "wlatin1"
+Read data set of size 10 x 100 in 0.019 seconds
+Dict{Symbol,Any} with 16 entries:
+  :filename             => "test1.sas7bdat"
+  :page_length          => 65536
+  :file_encoding        => "wlatin1"
+  :system_endianness    => :LittleEndian
+  :ncols                => 100
+  :column_types         => DataType[Float64, String, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64  …  Float64, Float64…
+  :data                 => Dict{Any,Any}(Pair{Any,Any}(:Column60, [2987.0, 8194.0, 9820.0, 8252.0, 9640.0, 9168.0, 7547.0, 1419.0, 4884.0, NaN])…
+  :perf_type_conversion => 0.0052096
+  :page_count           => 1
+  :column_names         => String["Column60", "Column42", "Column68", "Column35", "Column33", "Column1", "Column41", "Column16", "Column72", "Co…
+  :column_symbols       => Symbol[:Column60, :Column42, :Column68, :Column35, :Column33, :Column1, :Column41, :Column16, :Column72, :Column19  ……
+  :column_lengths       => [8, 9, 8, 8, 8, 9, 8, 8, 8, 9  …  8, 8, 8, 5, 8, 8, 8, 9, 8, 8]
+  :file_endianness      => :LittleEndian
+  :nrows                => 10
+  :perf_read_data       => 0.00612195
+  :column_offsets       => [0, 600, 8, 16, 24, 609, 32, 40, 48, 618  …  536, 544, 552, 795, 560, 568, 576, 800, 584, 592]
 ```
 
-You can use the data by referencing the key `:data`, for which the value is another Dict object with the column name as the key.
+Fetch the data using the key `:data`.  The data is represented as a Dict object with the column symbol as the key.
 
 ```juia
 julia> x[:data][:Column1]
