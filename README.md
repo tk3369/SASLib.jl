@@ -92,3 +92,17 @@ results = SASLib.read(handler, 3)   # read 3 rows
 results = SASLib.read(handler, 4)   # read next 4 rows
 SASLib.close(handler)              # remember to close the handler when done
 ```
+
+## Read Performance
+
+I would have expected Julia to be 10x faster than Python but depending on the characterisitc of the data file and target platform I am getting mixed results.  Pandas uses Cython to speed up the core section of the code.  
+
+When I have time I will publish some test results.  I would also be happy to hear about your experience - feel free to create an issue with your performance test results. 
+
+## Why another package?
+
+At first, I was just going to use ReadStat.  However, ReadStat does not support reading files with compressed binary data.  I could have chosen to contribute to that project instead but I would rather learn and code in Julia instead ;-)  The implementation in Pandas is fairly straightforward, making it a relatively easy porting project.  
+
+## Porting Notes
+
+I chose to copy the code from Pandas and made minimal changes so I can have a working version quickly.  Hence, the code isn't very Julia-friendly e.g. variable and function naming are all mixed up.  It is not a priority at this point but I would think some major refactoring would be required to make it more clean & performant.
