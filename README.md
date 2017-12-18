@@ -106,3 +106,7 @@ At first, I was just going to use ReadStat.  However, ReadStat does not support 
 ## Porting Notes
 
 I chose to copy the code from Pandas and made minimal changes so I can have a working version quickly.  Hence, the code isn't very Julia-friendly e.g. variable and function naming are all mixed up.  It is not a priority at this point but I would think some major refactoring would be required to make it more clean & performant.
+
+## Credits
+
+Many thanks to Jared Hobbs, the original author of the SAS I/O code from Python Pandas.
