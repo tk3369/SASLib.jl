@@ -40,4 +40,17 @@ using Base.Test
         @test df[:Column4][1:3] == [Date("1965-12-10"), Date("1977-03-07"), Date("1983-08-15")]
     end
 
+    @testset "misc" begin
+        result = readsas("productsales.sas7bdat")
+        df = result[:data]
+		@test result[:ncols] == 10
+		@test result[:nrows] == 1440
+		@test result[:page_length] == 8192
+		@test sum(df[:ACTUAL]) ≈ 730337.0
+    end
+
+	@testset "exception" begin
+        @test_throws SASLib.FileFormatError readsas("runtests.jl")
+	end
+
 end
