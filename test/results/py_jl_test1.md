@@ -27,7 +27,7 @@ Platform Info:
 ```
 
 ## Python
-
+```
 $ python perf_test1.py numeric_1000000_2.sas7bdat 
 1: elapsed 1.844023 seconds
 2: elapsed 1.806474 seconds
@@ -40,9 +40,10 @@ $ python perf_test1.py numeric_1000000_2.sas7bdat
 9: elapsed 1.874004 seconds
 10: elapsed 1.861223 seconds
 Average: 1.8462 seconds
+```
 
 ## Julia
-
+```
 $ julia perf_test1.jl numeric_1000000_2.sas7bdat 
 Loaded library in 0.225 seconds
 Bootstrap elapsed 4.569 seconds
@@ -57,3 +58,4 @@ Elapsed 2.082 seconds
 Elapsed 2.070 seconds
 Elapsed 2.013 seconds
 Average: 2.076054688 seconds
+```
