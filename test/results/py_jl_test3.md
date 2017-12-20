@@ -2,13 +2,13 @@
 
 ## Summary
 
-Julia is 8x faster than Python!
+Julia is 3.5x _slower_ than Python!
 
 ## Test File
 
-Filename      |Rows|Columns|Numeric Columns|String Columns
---------------|----|-------|---------------|--------------
-test1.sas7bdat|10  |100    |73             |27
+Filename             |Rows|Columns|Numeric Columns|String Columns
+---------------------|----|-------|---------------|--------------
+productsales.sas7bdat|10  |100    |73             |27
 
 ## Test Environment
 
@@ -28,34 +28,35 @@ Platform Info:
 
 ## Python
 ```
-$ python perf_test1.py test1.sas7bdat
-1: elapsed 0.127801 seconds
-2: elapsed 0.104040 seconds
-3: elapsed 0.115647 seconds
-4: elapsed 0.102978 seconds
-5: elapsed 0.100335 seconds
-6: elapsed 0.101916 seconds
-7: elapsed 0.099474 seconds
-8: elapsed 0.097988 seconds
-9: elapsed 0.102512 seconds
-10: elapsed 0.097088 seconds
-Average: 0.1050 seconds
+$ python perf_test1.py productsales.sas7bdat 
+1: elapsed 0.038040 seconds
+2: elapsed 0.030986 seconds
+3: elapsed 0.039832 seconds
+4: elapsed 0.031767 seconds
+5: elapsed 0.041312 seconds
+6: elapsed 0.033195 seconds
+7: elapsed 0.039814 seconds
+8: elapsed 0.030574 seconds
+9: elapsed 0.040095 seconds
+10: elapsed 0.031431 seconds
+Average: 0.0357 seconds
 ```
 
 ## Julia
 ```
-$ julia perf_test1.jl test1.sas7bdat 
-Loaded library in 0.224 seconds
-Bootstrap elapsed 2.829 seconds
-Elapsed 0.010 seconds
-Elapsed 0.017 seconds
-Elapsed 0.011 seconds
-Elapsed 0.015 seconds
-Elapsed 0.010 seconds
-Elapsed 0.010 seconds
-Elapsed 0.014 seconds
-Elapsed 0.024 seconds
-Elapsed 0.009 seconds
-Elapsed 0.012 seconds
-Average: 0.0131050582 seconds
+$ julia perf_test1.jl productsales.sas7bdat 
+Loaded library in 0.212 seconds
+Bootstrap elapsed 2.920 seconds
+Elapsed 0.129 seconds
+Elapsed 0.128 seconds
+Elapsed 0.126 seconds
+Elapsed 0.123 seconds
+Elapsed 0.126 seconds
+Elapsed 0.128 seconds
+Elapsed 0.129 seconds
+Elapsed 0.128 seconds
+Elapsed 0.124 seconds
+Elapsed 0.125 seconds
+Average: 0.12677397689999997 seconds
+
 ```
