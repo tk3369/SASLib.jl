@@ -6,9 +6,9 @@ Julia is 3.5x _slower_ than Python!
 
 ## Test File
 
-Filename             |Rows|Columns|Numeric Columns|String Columns
----------------------|----|-------|---------------|--------------
-productsales.sas7bdat|10  |100    |73             |27
+Filename             |Rows  |Columns|Numeric Columns|String Columns
+---------------------|------|-------|---------------|--------------
+productsales.sas7bdat|1440  |10     |4              |6
 
 ## Test Environment
 
