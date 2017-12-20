@@ -8,7 +8,7 @@ Python is approximately 10% faster than the Julia implementation.
 
 Filename|Rows|Columns|Numeric Columns|String Columns
 --------|----|-------|---------------|--------------
-numeric_1000000_2.sas7bdat|1000000|2|2|0
+numeric_1000000_2.sas7bdat|1,000,000|2|2|0
 
 ## Test Environment
 
