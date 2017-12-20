@@ -1,8 +1,9 @@
 from time import time
 from pandas import read_sas
+import sys
 
-def perf_test1():
-    df = read_sas("numeric_1000000_2.sas7bdat")
+def perf_test(file):
+    df = read_sas(file)
 
 def benchmark(f, n):
     total = 0
@@ -13,7 +14,11 @@ def benchmark(f, n):
         elapsed = t2 - t1
         print("{:d}: elapsed {:f} seconds".format(i+1, elapsed))
         total += elapsed
+    print("Average: {:.4f} seconds".format(total/n))
 
-    print("Average: {:f} seconds".format(int(total/n)))
+def run():
+    perf_test(sys.argv[1])
 
-benchmark(perf_test1, 10)
+if len(sys.argv) != 2:
+    sys.exit("Usage: %s filename" % sys.argv[0])
+benchmark(run, 10)

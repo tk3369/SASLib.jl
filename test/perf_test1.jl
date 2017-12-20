@@ -1,3 +1,9 @@
+
+if length(ARGS) != 1
+    println("Usage: $PROGRAM_FILE filename")
+	exit()
+end
+
 tic()
 using SASLib
 @printf "Loaded library in %.3f seconds\n" toq()
@@ -19,4 +25,4 @@ function perf(f, n)
     println("Average: $(total / n) seconds")
 end
 
-perf(() -> readsas("numeric_1000000_2.sas7bdat"), 10)
+perf(() -> readsas(ARGS[1], Dict(:verbose_level => 0)), 10)
