@@ -781,8 +781,8 @@ function _process_format_subheader(handler, offset, length)
 
     x = _read_int(handler, text_subheader_format,
                     column_format_text_subheader_index_length)
-    # TODO length() didn't work => ERROR: MethodError: objects of type Int32 are not callable
-    format_idx = min(x, size(handler.column_names_strings)[1] - 1)
+    # TODO julia bug?  must reference Base.length explicitly or else we get MethodError: objects of type Int64 are not callable
+    format_idx = min(x, Base.length(handler.column_names_strings) - 1)
 
     format_start = _read_int(handler, 
         col_format_offset, column_format_offset_length)
@@ -792,8 +792,8 @@ function _process_format_subheader(handler, offset, length)
     label_idx = _read_int(handler, 
         text_subheader_label,
         column_label_text_subheader_index_length)
-    # TODO length() didn't work => ERROR: MethodError: objects of type Int32 are not callable
-    label_idx = min(label_idx, size(handler.column_names_strings)[1] - 1)
+    # TODO julia bug?  must reference Base.length explicitly or else we get MethodError: objects of type Int64 are not callable
+    label_idx = min(label_idx, Base.length(handler.column_names_strings) - 1)
 
     label_start = _read_int(handler, 
         col_label_offset, column_label_offset_length)
