@@ -68,6 +68,7 @@ const page_amd_type = 1024
 const page_metc_type = 16384
 const page_comp_type = -28672
 const page_mix_types = [512, 640]
+const page_meta_data_mix_types = vcat(page_meta_type, page_data_type, page_mix_types)
 const subheader_pointers_offset = 8
 const truncated_subheader_id = 1
 const compressed_subheader_id = 4

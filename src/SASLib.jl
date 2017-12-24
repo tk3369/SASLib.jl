@@ -2,8 +2,6 @@ __precompile__()
 
 module SASLib
 
-version = "0.1"
-
 using StringEncodings
 
 export readsas
@@ -22,7 +20,6 @@ struct ReaderConfig
     encoding::AbstractString
     chunksize::UInt8
     convert_dates::Bool
-    # convert_empty_string_to_missing::Bool
     convert_text::Bool
     convert_header_text::Bool
     verbose_level::Int8
@@ -30,7 +27,6 @@ struct ReaderConfig
         get(config, :encoding, default_encoding),
         get(config, :chunksize, default_chunksize),
         get(config, :convert_dates, default_convert_dates), 
-        # get(config, :convert_empty_string_to_missing, default_convert_empty_string_to_missing),
         get(config, :convert_text, default_convert_text), 
         get(config, :convert_header_text, default_convert_header_text),
         get(config, :verbose_level, default_verbose_level))
@@ -46,7 +42,7 @@ struct Column
 end
 
 # technically these fields may have lower precision (need casting?)
-struct subheader_pointer
+struct SubHeaderPointer
     offset::Int64
     length::Int64
     compression::Int64
@@ -64,20 +60,20 @@ mutable struct Handler
     column_formats::Vector{AbstractString}
     columns::Vector{Column}
     
-    current_page_data_subheader_pointers::Vector{subheader_pointer}
+    current_page_data_subheader_pointers::Vector{SubHeaderPointer}
     cached_page::Vector{UInt8}
     column_data_lengths::Vector{Int64}
     column_data_offsets::Vector{Int64}
-    current_row_in_file_index::UInt64
-    current_row_on_page_index::UInt64
+    current_row_in_file_index::Int64
+    current_row_in_page_index::Int64
 
     file_endianness::Symbol
     sys_endianness::Symbol
     byte_swap::Bool
 
     U64::Bool
-    int_length::UInt8
-    page_bit_offset::UInt8
+    int_length::Int8
+    page_bit_offset::Int8
     subheader_pointer_length::UInt8
 
     file_encoding::AbstractString
@@ -88,43 +84,38 @@ mutable struct Handler
     date_created::DateTime
     date_modified::DateTime
 
-    header_length::UInt64
-    page_length::UInt64
-    page_count::UInt64
+    header_length::Int64
+    page_length::Int64
+    page_count::Int64
     sas_release::Union{AbstractString,Vector{UInt8}}
     server_type::Union{AbstractString,Vector{UInt8}}
     os_version::Union{AbstractString,Vector{UInt8}}
     os_name::Union{AbstractString,Vector{UInt8}}
 
-    row_length
-    row_count
-    col_count_p1
-    col_count_p2
-    mix_page_row_count
-    lcs
-    lcp
+    row_length::Int64
+    row_count::Int64
+    col_count_p1::Int64
+    col_count_p2::Int64
+    mix_page_row_count::Int64
+    lcs::Int64
+    lcp::Int64
 
-    current_page_type
-    current_page_block_count
-    current_page_subheaders_count
-    column_count
-    creator_proc
+    current_page_type::Int64
+    current_page_block_count::Int64       # number of records in current page
+    current_page_subheaders_count::Int64
+    column_count::Int64
+    creator_proc::Union{Void, Vector{UInt8}}
 
     byte_chunk::Array{UInt8, 2}
     string_chunk::Array{String, 2}
-    current_row_in_chunk_index
+    current_row_in_chunk_index::Int64
 
-    current_page::Int32
+    current_page::Int64
     
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
         config)
 end
-
-# verbose printing.  1=little verbose, 2=medium verbose, 3=very verbose
-@inline println1(handler::Handler, msg) = handler.config.verbose_level >= 1 && println(msg)
-@inline println2(handler::Handler, msg) = handler.config.verbose_level >= 2 && println(msg)
-@inline println3(handler::Handler, msg) = handler.config.verbose_level >= 3 && println(msg)
 
 function open(config::ReaderConfig) 
     # println("Opening $(config.filename)")
@@ -136,8 +127,9 @@ function open(config::ReaderConfig)
     handler.column_formats = []
     handler.current_page_data_subheader_pointers = []
     handler.current_row_in_file_index = 0
-    handler.current_row_in_chunk_index = 0
-    handler.current_row_on_page_index = 0
+    #handler.current_row_in_chunk_index = 0
+    handler.current_row_in_page_index = 0
+    handler.current_page = 0
     _get_properties(handler)
     _parse_metadata(handler)
     return handler
@@ -239,6 +231,12 @@ function _read_bytes(handler, offset, len)
     end
 end
 
+# Get file properties from the header (first page of the file).
+#
+# At least 2 i/o operation is required:
+# 1. First 288 bytes contain some important info e.g. header_length
+# 2. Rest of the bytes in the header is just header_length - 288
+#
 function _get_properties(handler)
 
     # read header section
@@ -327,10 +325,11 @@ function _get_properties(handler)
     end
 
     # Timestamp is epoch 01/01/1960
-    epoch =DateTime(1960, 1, 1, 0, 0, 0)
+    const epoch = DateTime(1960, 1, 1, 0, 0, 0)
     x = _read_float(handler, date_created_offset + align1, date_created_length)
     handler.date_created = epoch + Base.Dates.Millisecond(round(x * 1000))
     # println("date created = $(x) => $(handler.date_created)")
+
     x = _read_float(handler, date_modified_offset + align1, date_modified_length)
     handler.date_modified = epoch + Base.Dates.Millisecond(round(x * 1000))
     # println("date modified = $(x) => $(handler.date_modified)")
@@ -338,6 +337,7 @@ function _get_properties(handler)
     handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
 
     # Read the rest of the header into cached_page.
+    println2(handler, "  Reading rest of page, header_length=$(handler.header_length) willread=$(handler.header_length - 288)")
     buf = Base.read(handler.io, handler.header_length - 288)
     append!(handler.cached_page, buf)
     if length(handler.cached_page) != handler.header_length
@@ -385,9 +385,12 @@ function _get_properties(handler)
     # println("os_name = $(handler.os_name)")
 end
 
+# Keep reading pages until a meta page is found
 function _parse_metadata(handler)
+    println2(handler, "IN: _parse_metadata")
     done = false
     while !done
+        println2(handler, "  filepos=$(position(handler.io)) page_length=$(handler.page_length)")
         handler.cached_page = Base.read(handler.io, handler.page_length)
         if length(handler.cached_page) <= 0
             break
@@ -400,11 +403,14 @@ function _parse_metadata(handler)
 end
 
 function _process_page_meta(handler)
-    # println("IN: _process_page_meta")
+    println2(handler, "IN: _process_page_meta")
     _read_page_header(handler)  
     pt = vcat([page_meta_type, page_amd_type], page_mix_types)
     # println("  pt=$pt handler.current_page_type=$(handler.current_page_type)")
     if handler.current_page_type in pt
+        println2(handler, "  current_page_type = $(pagetype(handler.current_page_type))")
+        println2(handler, "  current_page = $(handler.current_page)")
+        println2(handler, "  $(concatenate(stringarray(currentpos(handler))))")
         _process_page_metadata(handler)
     end
     # println("  condition var #1: handler.current_page_type=$(handler.current_page_type)")
@@ -415,7 +421,7 @@ function _process_page_meta(handler)
 end
 
 function _read_page_header(handler)
-    # println("IN: _read_page_header")
+    println2(handler, "IN: _read_page_header")
     bit_offset = handler.page_bit_offset
     tx = page_type_offset + bit_offset
     handler.current_page_type = _read_int(handler, tx, page_type_length)
@@ -429,7 +435,7 @@ function _read_page_header(handler)
 end
 
 function _process_page_metadata(handler)
-    # println("IN: _process_page_metadata")
+    println2(handler, "IN: _process_page_metadata")
     bit_offset = handler.page_bit_offset
     # println("  bit_offset=$bit_offset")
     # println("  loop from 0 to $(handler.current_page_subheaders_count-1)")
@@ -479,7 +485,7 @@ function _process_subheader_pointers(handler, offset, subheader_pointer_index)
     # println("  returning subheader_compression=$subheader_compression")
     # println("  returning subheader_type=$subheader_type")
     
-    return subheader_pointer(
+    return SubHeaderPointer(
                 subheader_offset, 
                 subheader_length, 
                 subheader_compression, 
@@ -515,11 +521,12 @@ function _get_subheader_index(handler, signature, compression, ptype, idx)
     return val
 end
 
-
 function _process_subheader(handler, subheader_index, pointer)
-    # println("IN: _process_subheader")
+    println2(handler, "IN: _process_subheader")
     offset = pointer.offset
     length = pointer.length
+    
+    println2(handler, "  $(tostring(pointer))")
     # println("  offset=$offset")
     # println("  length=$length")    
 
@@ -549,7 +556,7 @@ function _process_subheader(handler, subheader_index, pointer)
 end
 
 function _process_rowsize_subheader(handler, offset, length)
-    # println("IN: _process_rowsize_subheader")
+    println2(handler, "IN: _process_rowsize_subheader")
     int_len = handler.int_length
     lcs_offset = offset
     lcp_offset = offset
@@ -576,12 +583,12 @@ function _process_rowsize_subheader(handler, offset, length)
     # println("  int_len=$int_len")
     # println("  lcs_offset=$lcs_offset")
     # println("  lcp_offset=$lcp_offset")
-    # println("  handler.row_length=$(handler.row_length)")
-    # println("  handler.row_count=$(handler.row_count)")
+    println2(handler, "  handler.row_length=$(handler.row_length)")
+    println2(handler, "  handler.row_count=$(handler.row_count)")
     # println("  handler.col_count_p1=$(handler.col_count_p1)")
     # println("  handler.col_count_p2=$(handler.col_count_p2)")
     # println("  mx=$mx")
-    # println("  handler.mix_page_row_count=$(handler.mix_page_row_count)")
+    println2(handler, "  handler.mix_page_row_count=$(handler.mix_page_row_count)")
     # println("  handler.lcs=$(handler.lcs)")
     # println("  handler.lcp=$(handler.lcp)")
 end
@@ -679,7 +686,7 @@ end
         
 
 function _process_columnname_subheader(handler, offset, length)
-    # println("IN: _process_columnname_subheader")
+    println2(handler, "IN: _process_columnname_subheader")
     int_len = handler.int_length
     # println(" int_len=$int_len")
     # println(" offset=$offset")    
@@ -716,7 +723,7 @@ function _process_columnname_subheader(handler, offset, length)
             name = decode(name, handler.config.encoding)
         end
         push!(handler.column_names, name)
-        # println(" i=$i name=$name")
+        println2(handler, " i=$i name=$name")
     end
 end
 
@@ -860,8 +867,10 @@ function read_chunk(handler, nrows=0)
     handler.string_chunk = fill("", (Int64(ns), Int64(nrows)))
     handler.byte_chunk = fill(UInt8(0), (Int64(nd), Int64(8 * nrows))) # 8-byte values
 
+    # don't do this or else the state is polluted if user wants to 
+    # read lines separately.
+    # handler.current_page = 0
     handler.current_row_in_chunk_index = 0
-    handler.current_page = 0
     
     tic()
     read_data(handler, nrows)
@@ -894,10 +903,13 @@ function read_chunk(handler, nrows=0)
         )
 end
 
-function _read_next_page(handler)
-    # println("IN: _read_next_page")
+function _read_next_page_content(handler)
+    println2(handler, "IN: _read_next_page_content")
+    println2(handler, "  positions = $(concatenate(stringarray(currentpos(handler))))")
     handler.current_page += 1
-    println2(handler, "_read_next_page: current_page = $(handler.current_page)")
+    println2(handler, "  current_page = $(handler.current_page)")
+    println2(handler, "  file position = $(Base.position(handler.io))")
+    println2(handler, "  page_length = $(handler.page_length)")
 
     handler.current_page_data_subheader_pointers = []
     handler.cached_page = Base.read(handler.io, handler.page_length)
@@ -910,21 +922,30 @@ function _read_next_page(handler)
     if handler.current_page_type == page_meta_type
         _process_page_metadata(handler)
     end
-    println2(handler, "_read_next_page: current_page_type = $(handler.current_page_type)")
-    
-    # println("  page_meta_type=$page_meta_type")
-    # println("  page_data_type=$page_data_type")
-    # println("  page_mix_types=$page_mix_types")
-    pt = [page_meta_type, page_data_type]
-    append!(pt, page_mix_types)
-    # println("  pt=$pt")
-    if ! (handler.current_page_type in pt)
+
+    println2(handler, "  type=$(pagetype(handler.current_page_type))")
+    if ! (handler.current_page_type in page_meta_data_mix_types)
         println2(handler, "page type not found $(handler.current_page_type)... reading next one")
-        return _read_next_page(handler)
+        return _read_next_page_content(handler)
     end
     return false
 end
 
+function pagetype(value)
+    if value == page_meta_type
+        "META"
+    elseif value == page_data_type
+        "DATA"
+    elseif value in page_mix_types
+        "MIX"
+    else
+        "UNKNOWN"
+    end
+end
+
+# Construct Dict object that holds the columns.
+# For date or datetime columns, convert from numeric value to Date/DateTime type column.
+# The resulting dictionary uses column symbols as the key.
 function _chunk_to_dataframe(handler)
     # println("IN: _chunk_to_dataframe")
     
@@ -965,28 +986,15 @@ function _chunk_to_dataframe(handler)
             # println("  String: size=$(size(handler.string_chunk))")
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
             rslt[name] = handler.string_chunk[js, :]
-            # TODO don't we always want to convert?  seems unnecessary.
-            # if handler.config.convert_text 
-            #     rslt[name] = decode.(rslt[name], handler.config.encoding)
-            #     #rslt[name] = map(x -> decode(x, handler.config.encoding), rslt[name])
-            # end
-            # TODO need to convert "" to missing?
-            # if handler.config.blank_missing
-            #     ii = length(rslt[name]) == 0
-            #     rslt.loc[ii, name] = np.nan  #TODO what is this?
-            # end
             js += 1
         else
             throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
         end
-        #if length(rslt[name]) < 100  #don't kill the screen with too much data
-            # println("  rslt[name] = $(rslt[name])")
-        #end
     end
     return rslt
 end
 
-# from sas.pyx 
+# Simple loop that reads data row-by-row.
 function read_data(handler, nrows)
     # println("IN: read_data, nrows=$nrows")
     for i in 1:nrows
@@ -997,19 +1005,14 @@ function read_data(handler, nrows)
     end
 end
 
-# consider renaming this function to avoid confusion
 function read_next_page(handler)
-    done = _read_next_page(handler)
+    done = _read_next_page_content(handler)
     if done
         handler.cached_page = []
     else
-        update_next_page(handler)
+        handler.current_row_in_page_index = 0
     end
     return done
-end
-
-function update_next_page(handler)
-    handler.current_row_on_page_index = 0
 end
 
 # Return `true` when there is nothing else to read
@@ -1019,7 +1022,7 @@ function readline(handler)
     subheader_pointer_length = handler.subheader_pointer_length
     
     # If there is no page, go to the end of the header and read a page.
-    # TODO commented out for performance reasons... do we really need this?
+    # TODO commented out for performance reason... do we really need this?
     # if handler.cached_page == []
     #     println("  no cached page... seeking past header")
     #     seek(handler.io, handler.header_length)
@@ -1036,7 +1039,7 @@ function readline(handler)
     while true
         if handler.current_page_type == page_meta_type
             #println("    page type == page_meta_type")
-            flag = handler.current_row_on_page_index >= length(handler.current_page_data_subheader_pointers)
+            flag = handler.current_row_in_page_index >= length(handler.current_page_data_subheader_pointers)
             if flag
                 # println("    reading next page")
                 done = read_next_page(handler)
@@ -1047,7 +1050,7 @@ function readline(handler)
                 continue
             end
             current_subheader_pointer = 
-                handler.current_page_data_subheader_pointers[handler.current_row_on_page_index+1]
+                handler.current_page_data_subheader_pointers[handler.current_row_in_page_index+1]
                 # println("    current_subheader_pointer = $(current_subheader_pointer)")
                 process_byte_array_with_data(handler,
                     current_subheader_pointer.offset,
@@ -1069,15 +1072,15 @@ function readline(handler)
             offset += (handler.current_page_subheaders_count *
                     subheader_pointer_length)
             # println("    offset = $offset")
-            # println("    handler.current_row_on_page_index = $(handler.current_row_on_page_index)")
+            # println("    handler.current_row_in_page_index = $(handler.current_row_in_page_index)")
             # println("    handler.row_length = $(handler.row_length)")
-            offset += handler.current_row_on_page_index * handler.row_length
+            offset += handler.current_row_in_page_index * handler.row_length
             # println("    offset = $offset")
             process_byte_array_with_data(handler, offset, handler.row_length)
             mn = min(handler.row_count, handler.mix_page_row_count)
-            # println("    handler.current_row_on_page_index=$(handler.current_row_on_page_index)")
+            # println("    handler.current_row_in_page_index=$(handler.current_row_in_page_index)")
             # println("    mn = $mn")
-            if handler.current_row_on_page_index == mn
+            if handler.current_row_in_page_index == mn
                 # println("    reading next page")
                 done = read_next_page(handler)
                 if done
@@ -1090,12 +1093,12 @@ function readline(handler)
             #println("    page type == page_data_type")
             process_byte_array_with_data(handler,
                 handler.page_bit_offset + subheader_pointers_offset +
-                handler.current_row_on_page_index * handler.row_length,
+                handler.current_row_in_page_index * handler.row_length,
                 handler.row_length)
-            # println("    handler.current_row_on_page_index=$(handler.current_row_on_page_index)")
+            # println("    handler.current_row_in_page_index=$(handler.current_row_in_page_index)")
             # println("    handler.current_page_block_count=$(handler.current_page_block_count)")
-            flag = (handler.current_row_on_page_index == handler.current_page_block_count)
-            #println("$(handler.current_row_on_page_index) $(handler.current_page_block_count)")
+            flag = (handler.current_row_in_page_index == handler.current_page_block_count)
+            #println("$(handler.current_row_in_page_index) $(handler.current_page_block_count)")
             if flag
                 # println("    reading next page")
                 done = read_next_page(handler)
@@ -1189,7 +1192,7 @@ function process_byte_array_with_data(handler, offset, length)
         end
     end
 
-    handler.current_row_on_page_index += 1
+    handler.current_row_in_page_index += 1
     handler.current_row_in_chunk_index += 1
     handler.current_row_in_file_index += 1
 end
@@ -1402,6 +1405,34 @@ function rdc_decompress(result_length, inbuff::Vector{UInt8})
     end
 
     return outbuff
+end
+
+# ---- Debugging methods ----
+
+# verbose printing.  1=little verbose, 2=medium verbose, 3=very verbose
+@inline println1(handler::Handler, msg) = handler.config.verbose_level >= 1 && println(msg)
+@inline println2(handler::Handler, msg) = handler.config.verbose_level >= 2 && println(msg)
+@inline println3(handler::Handler, msg) = handler.config.verbose_level >= 3 && println(msg)
+
+# string representation of the SubHeaderPointer structure
+function tostring(x::SubHeaderPointer) 
+  "<SubHeaderPointer: offset=$(x.offset), length=$(x.length), compression=$(x.compression), type=$(x.ptype)>"
+end
+
+# Return the current position in various aspects (file, page, chunk)
+# This is useful for debugging purpose especially during incremental reads.
+function currentpos(handler)
+    d = Dict()
+    if isdefined(handler, :current_row_in_file_index) 
+        d[:current_row_in_file] = handler.current_row_in_file_index
+    end
+    if isdefined(handler, :current_row_in_page_index) 
+        d[:current_row_in_page] = handler.current_row_in_page_index
+    end
+    if isdefined(handler, :current_row_in_chunk_index) 
+        d[:current_row_in_chunk] = handler.current_row_in_chunk_index
+    end
+    return d
 end
 
 end # module
