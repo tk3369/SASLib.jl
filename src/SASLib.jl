@@ -104,7 +104,7 @@ mutable struct Handler
     current_page_block_count::Int64       # number of records in current page
     current_page_subheaders_count::Int64
     column_count::Int64
-    creator_proc::Union{Void, Vector{UInt8}}
+    # creator_proc::Union{Void, Vector{UInt8}}
 
     byte_chunk::Array{UInt8, 2}
     string_chunk::Array{String, 2}
@@ -657,14 +657,14 @@ function _process_columntext_subheader(handler, offset, length)
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
-            creator_proc = buf[1:handler.lcp]
+            # creator_proc = buf[1:handler.lcp]
         elseif compression_literal == rle_compression
             offset1 = offset + 40
             if handler.U64
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
-            creator_proc = buf[1:handler.lcp]
+            # creator_proc = buf[1:handler.lcp]
         elseif handler.lcs > 0
             handler.lcp = 0
             offset1 = offset + 16
@@ -672,12 +672,12 @@ function _process_columntext_subheader(handler, offset, length)
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcs)
-            creator_proc = buf[1:handler.lcp]
-        else
-            creator_proc = nothing
+            # creator_proc = buf[1:handler.lcp]
+        # else
+        #     creator_proc = nothing
         end
-        handler.creator_proc = 
-            creator_proc != nothing ? transcode(handler, creator_proc) : nothing
+        # handler.creator_proc = 
+        #     creator_proc != nothing ? transcode(handler, creator_proc) : nothing
         # if handler.config.convert_header_text
         #     if handler.creator_proc != nothing
         #         handler.creator_proc = decode(handler.creator_proc, handler.config.encoding)
