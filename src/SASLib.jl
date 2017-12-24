@@ -291,7 +291,7 @@ function _get_properties(handler)
     # Get encoding information
     buf = _read_bytes(handler, encoding_offset, encoding_length)[1]
     if haskey(encoding_names, buf)
-        handler.file_encoding = encoding_names[buf]
+        handler.file_encoding = "$(encoding_names[buf])"
     else
         handler.file_encoding = "unknown (code=$buf)" 
     end
@@ -309,20 +309,20 @@ function _get_properties(handler)
     # println("platform = $(handler.platform)")
 
     buf = _read_bytes(handler, dataset_offset, dataset_length)
-    handler.name = brstrip(buf, zero_space)
-    if handler.config.convert_header_text
-        # println("before decode: name = $(handler.name)")
-        handler.name = decode(handler.name, handler.config.encoding)
-        # println("after decode:  name = $(handler.name)")
-    end
+    handler.name = transcode(handler, brstrip(buf, zero_space))
+    # if handler.config.convert_header_text
+    #     # println("before decode: name = $(handler.name)")
+    #     handler.name = decode(handler.name, handler.config.encoding)
+    #     # println("after decode:  name = $(handler.name)")
+    # end
 
     buf = _read_bytes(handler, file_type_offset, file_type_length)
-    handler.file_type = brstrip(buf, zero_space)
-    if handler.config.convert_header_text
-        # println("before decode: file_type = $(handler.file_type)")
-        handler.file_type = decode(handler.file_type, handler.config.encoding)
-        # println("after decode:  file_type = $(handler.file_type)")
-    end
+    handler.file_type = transcode(handler, brstrip(buf, zero_space))
+    # if handler.config.convert_header_text
+    #     # println("before decode: file_type = $(handler.file_type)")
+    #     handler.file_type = decode(handler.file_type, handler.config.encoding)
+    #     # println("after decode:  file_type = $(handler.file_type)")
+    # end
 
     # Timestamp is epoch 01/01/1960
     const epoch = DateTime(1960, 1, 1, 0, 0, 0)
@@ -351,36 +351,36 @@ function _get_properties(handler)
     # println("page_count = $(handler.page_count)")
     
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
-    handler.sas_release = brstrip(buf, zero_space)
-    if handler.config.convert_header_text
-        handler.sas_release = decode(handler.sas_release, handler.config.encoding)
-    end
+    handler.sas_release = transcode(handler, brstrip(buf, zero_space))
+    # if handler.config.convert_header_text
+    #     handler.sas_release = transcode(handler.sas_release, handler.config.encoding)
+    # end
     # println("SAS Release = $(handler.sas_release)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
-    handler.server_type = brstrip(buf, zero_space)
-    if handler.config.convert_header_text
-        handler.server_type = decode(handler.server_type, handler.config.encoding)
-    end
+    handler.server_type = transcode(handler, brstrip(buf, zero_space))
+    # if handler.config.convert_header_text
+    #     handler.server_type = decode(handler.server_type, handler.config.encoding)
+    # end
     # println("server_type = $(handler.server_type)")
 
     buf = _read_bytes(handler, os_version_number_offset + total_align, os_version_number_length)
-    handler.os_version = brstrip(buf, zero_space)
-    if handler.config.convert_header_text
-        handler.os_version = decode(handler.os_version, handler.config.encoding)
-    end
+    handler.os_version = transcode(handler, brstrip(buf, zero_space))
+    # if handler.config.convert_header_text
+    #     handler.os_version = decode(handler.os_version, handler.config.encoding)
+    # end
     # println("os_version = $(handler.os_version)")
     
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
     buf = brstrip(buf, zero_space)
     if length(buf) > 0
-        handler.os_name = decode(buf, handler.config.encoding)
+        handler.os_name = transcode(handler, buf)
     else
         buf = _read_bytes(handler, os_maker_offset + total_align, os_maker_length)
-        handler.os_name = brstrip(buf, zero_space)
-        if handler.config.convert_header_text
-            handler.os_name = decode(handler.os_name, handler.config.encoding)
-        end
+        handler.os_name = transcode(handler, brstrip(buf, zero_space))
+        # if handler.config.convert_header_text
+        #     handler.os_name = decode(handler.os_name, handler.config.encoding)
+        # end
     end
     # println("os_name = $(handler.os_name)")
 end
@@ -657,14 +657,14 @@ function _process_columntext_subheader(handler, offset, length)
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
-            handler.creator_proc = buf[1:handler.lcp]
+            creator_proc = buf[1:handler.lcp]
         elseif compression_literal == rle_compression
             offset1 = offset + 40
             if handler.U64
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
-            handler.creator_proc = buf[1:handler.lcp]
+            creator_proc = buf[1:handler.lcp]
         elseif handler.lcs > 0
             handler.lcp = 0
             offset1 = offset + 16
@@ -672,15 +672,17 @@ function _process_columntext_subheader(handler, offset, length)
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcs)
-            handler.creator_proc = buf[1:handler.lcp]
+            creator_proc = buf[1:handler.lcp]
         else
-            handler.creator_proc = nothing
+            creator_proc = nothing
         end
-        if handler.config.convert_header_text
-            if handler.creator_proc != nothing
-                handler.creator_proc = decode(handler.creator_proc, handler.config.encoding)
-            end
-        end
+        handler.creator_proc = 
+            creator_proc != nothing ? transcode(handler, creator_proc) : nothing
+        # if handler.config.convert_header_text
+        #     if handler.creator_proc != nothing
+        #         handler.creator_proc = decode(handler.creator_proc, handler.config.encoding)
+        #     end
+        # end
     end
 end
         
@@ -718,10 +720,10 @@ function _process_columnname_subheader(handler, offset, length)
         name_str = handler.column_names_strings[idx+1]
         # println(" i=$i name_str=$name_str")
         
-        name = name_str[col_offset+1:col_offset + col_len]
-        if handler.config.convert_header_text
-            name = decode(name, handler.config.encoding)
-        end
+        name = transcode(handler, name_str[col_offset+1:col_offset + col_len])
+        # if handler.config.convert_header_text
+        #     name = decode(name, handler.config.encoding)
+        # end
         push!(handler.column_names, name)
         println2(handler, " i=$i name=$name")
     end
@@ -810,10 +812,10 @@ function _process_format_subheader(handler, offset, length)
     label_names = handler.column_names_strings[label_idx+1]
     column_label = label_names[label_start+1: label_start + label_len]
     format_names = handler.column_names_strings[format_idx+1]
-    column_format = format_names[format_start+1: format_start + format_len]
-    if handler.config.convert_header_text
-        column_format = decode(column_format, handler.config.encoding)
-    end
+    column_format = transcode(handler, format_names[format_start+1: format_start + format_len])
+    # if handler.config.convert_header_text
+    #     column_format = decode(column_format, handler.config.encoding)
+    # end
     current_column_number = size(handler.columns, 2) + 1
 
     col = Column(
@@ -1186,8 +1188,9 @@ function process_byte_array_with_data(handler, offset, length)
             @inbounds byte_chunk[jb, m+1:m+lngt] = source[start+1:start+lngt]
             jb += 1
         elseif ct == column_type_string
-            @inbounds string_chunk[js, current_row+1] = strip(decode(source[start + 1:(
-                start + lngt)], handler.config.encoding), ' ')
+            @inbounds string_chunk[js, current_row+1] = 
+                rstrip(transcode(handler, source[start+1:(start+lngt)]))
+                #rstrip(decode(source[start+1:(start+lngt)], handler.config.encoding))
             js += 1
         end
     end
@@ -1195,6 +1198,15 @@ function process_byte_array_with_data(handler, offset, length)
     handler.current_row_in_page_index += 1
     handler.current_row_in_chunk_index += 1
     handler.current_row_in_file_index += 1
+end
+
+# custom transcode function
+@inline function transcode(handler::Handler, bytes::Vector{UInt8})
+    if handler.config.encoding != "UTF-8"
+        decode(bytes, handler.config.encoding)
+    else
+        Base.transcode(String, bytes)
+    end
 end
 
 # rle_decompress decompresses data using a Run Length Encoding
