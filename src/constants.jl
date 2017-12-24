@@ -108,10 +108,34 @@ const rdc_compression = b"SASYZCR2"
  
 const compression_literals = [rle_compression, rdc_compression]
 
-# Incomplete list of encodings, using SAS nomenclature:
-# http://support.sas.com/documentation/cdl/en/nlsref/61893/HTML/default/viewer.htm#a002607278.htm
-const encoding_names = Dict(29 => "latin1", 20 => "utf-8", 33 => "cyrillic", 60 => "wlatin2",
-                  61 => "wcyrillic", 62 => "wlatin1", 90 => "ebcdic870")
+# Courtesy of Evan Miller's ReadStat project
+# Source: https://github.com/WizardMac/ReadStat/blob/master/src/sas/readstat_sas.c
+const encoding_names = Dict(
+    20 => "UTF-8",
+    28 => "US-ASCII", 
+    29 => "ISO-8859-1", 
+    30 => "ISO-8859-2", 
+    31 => "ISO-8859-3",
+    34 => "ISO-8859-6",
+    35 => "ISO-8859-7",
+    36 => "ISO-8859-8",
+    39 => "ISO-8859-11",
+    40 => "ISO-8859-9",
+    60 => "WINDOWS-1250",
+    61 => "WINDOWS-1251",
+    62 => "WINDOWS-1252",
+    63 => "WINDOWS-1253",
+    64 => "WINDOWS-1254",
+    65 => "WINDOWS-1255",
+    66 => "WINDOWS-1256",
+    67 => "WINDOWS-1257",
+    119 => "EUC-TW",
+    123 => "BIG-5",
+    125 => "GB18030",
+    134 => "EUC-JP",
+    138 => "CP932",
+    140 => "EUC-KR"
+)
 
 
 const index_rowSizeIndex = 0
