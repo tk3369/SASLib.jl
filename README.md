@@ -7,6 +7,12 @@ This is a port of Pandas' read_sas function.
 
 Only `sas7bdat` format is supported, however.  If anyone needs to read `xport` formatted files, please create an issue or contribute/send me a pull request.
 
+## Installation
+
+```
+Pkg.add("SASLib)
+```
+
 ## Examples
 
 Use the `readsas` function to read the file.  The result is a dictionary of various information about the file as well as the data itself.
