@@ -5,14 +5,7 @@
 
 This is a port of Pandas' read_sas function.  
 
-Porting Status
-- [x] read sas7bdat files
-- [ ] read xport files
-
-To-do
-- [ ] performance optimization
-- [ ] better unit testing and coverage
-- [ ] better documentation
+Only `sas7bdat` format is supported, however.  If anyone needs to read `xport` formatted files, please create an issue or contribute/send me a pull request.
 
 ## Examples
 
@@ -95,13 +88,11 @@ SASLib.close(handler)              # remember to close the handler when done
 
 ## Read Performance
 
-I would have expected Julia to be 10x faster than Python but depending on the characterisitc of the data file and target platform I am getting mixed results.  Pandas uses Cython to speed up the core section of the code.  
-
-When I have time I will publish some test results.  I would also be happy to hear about your experience - feel free to create an issue with your performance test results. 
+I don't have too much performance test results but initial comparison between SASLib.jl and Pandas on my Macbookk has been encouraging.  In general, the Julia implementation is somewhere between 4x to 7x faster than the Python counterpart. See the perf\_results\_* folders for test results related to the version being published.
 
 ## Why another package?
 
-At first, I was just going to use ReadStat.  However, ReadStat does not support reading files with compressed binary data.  I could have chosen to contribute to that project instead but I would rather learn and code in Julia instead ;-)  The implementation in Pandas is fairly straightforward, making it a relatively easy porting project.  
+At first, I was just going to use ReadStat.  However, ReadStat does not support reading files with compressed binary data.  I could have chosen to contribute to that project instead but I would rather learn and code in Julia  ;-)  The implementation in Pandas is fairly straightforward, making it a relatively easy porting project.  
 
 ## Porting Notes
 
