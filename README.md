@@ -94,7 +94,7 @@ SASLib.close(handler)              # remember to close the handler when done
 
 ## Read Performance
 
-I don't have too much performance test results but initial comparison between SASLib.jl and Pandas on my Macbookk has been encouraging.  In general, the Julia implementation is somewhere between 4x to 7x faster than the Python counterpart. See the perf\_results\_* folders for test results related to the version being published.
+I don't have too much performance test results but initial comparison between SASLib.jl and Pandas on my Macbook Pro is encouraging.  In general, the Julia implementation is somewhere between 4x to 7x faster than the Python counterpart. See the perf\_results\_* folders for test results related to the version being published.
 
 ## Why another package?
 
