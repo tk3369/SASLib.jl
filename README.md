@@ -10,7 +10,7 @@ Only `sas7bdat` format is supported, however.  If anyone needs to read `xport` f
 ## Installation
 
 ```
-Pkg.add("SASLib)
+Pkg.add("SASLib")
 ```
 
 ## Examples
