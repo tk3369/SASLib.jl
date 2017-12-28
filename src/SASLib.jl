@@ -2,7 +2,7 @@ __precompile__()
 
 module SASLib
 
-using StringEncodings
+using StringEncodings, Missings
 
 export readsas
 
@@ -945,6 +945,24 @@ function pagetype(value)
     end
 end
 
+# convert Float64 value into Date object 
+function date_from_float(x::Vector{Float64})
+    v = Vector{Union{Date, Missing}}(length(x))
+    for i in 1:length(x)
+        v[i] = isnan(x[i]) ? missing : (sas_date_origin + Dates.Day(round(Int64, x[i])))
+    end
+    v
+end
+
+# convert Float64 value into DateTime object 
+function datetime_from_float(x::Vector{Float64})
+    v = Vector{Union{DateTime, Missing}}(length(x))
+    for i in 1:length(x)
+        v[i] = isnan(x[i]) ? missing : (sas_datetime_origin + Dates.Second(round(Int64, x[i])))
+    end
+    v
+end
+
 # Construct Dict object that holds the columns.
 # For date or datetime columns, convert from numeric value to Date/DateTime type column.
 # The resulting dictionary uses column symbols as the key.
@@ -955,7 +973,6 @@ function _chunk_to_dataframe(handler)
     m = handler.current_row_in_file_index
     rslt = Dict()
 
-    origin = Date(1960, 1, 1)
     js, jb = 1, 1
     # println("handler.column_names=$(handler.column_names)")
     for j in 1:handler.column_count
@@ -976,11 +993,10 @@ function _chunk_to_dataframe(handler)
             rslt[name] = values
             if handler.config.convert_dates
                 if handler.column_formats[j] in sas_date_formats
-                    # TODO had to convert to Array... refactor?
-                    rslt[name] = origin + Dates.Day.(Array(round.(Integer, rslt[name])))
+                    rslt[name] = date_from_float(rslt[name])
                 elseif handler.column_formats[j] in sas_datetime_formats
                     # TODO probably have to deal with timezone somehow
-                    rslt[name] = DateTime(origin) + Dates.Second.(Array(round.(Integer, rslt[name])))
+                    rslt[name] = datetime_from_float(rslt[name])
                 end
             end
             jb += 1

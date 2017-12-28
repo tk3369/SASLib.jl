@@ -105,6 +105,8 @@ const column_label_length_offset = 32
 const column_label_length_length = 2
 const rle_compression = b"SASYZCRL"
 const rdc_compression = b"SASYZCR2"
+const sas_date_origin = Date(1960, 1, 1)
+const sas_datetime_origin = DateTime(sas_date_origin)
  
 const compression_literals = [rle_compression, rdc_compression]
 
