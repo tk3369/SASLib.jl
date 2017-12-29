@@ -4,7 +4,7 @@ using Base.Test
 @testset "SASLib" begin
 
     @testset "open and close" begin
-        handler = SASLib.open(SASLib.ReaderConfig("test1.sas7bdat"))
+        handler = SASLib.open("test1.sas7bdat")
         @test typeof(handler) == SASLib.Handler
         @test handler.config.filename == "test1.sas7bdat"
         @test SASLib.close(handler) == nothing
