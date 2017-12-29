@@ -15,6 +15,10 @@ struct FileFormatError <: Exception
     message::AbstractString
 end 
 
+struct ConfigError <: Exception
+    message::AbstractString
+end 
+
 struct ReaderConfig 
     filename::AbstractString
     encoding::AbstractString
@@ -23,6 +27,7 @@ struct ReaderConfig
     convert_text::Bool
     convert_header_text::Bool
     include_columns::Vector{Union{Symbol, Int64}}
+    exclude_columns::Vector{Union{Symbol, Int64}}
     verbose_level::Int8
     ReaderConfig(filename, config = Dict()) = new(filename, 
         get(config, :encoding, default_encoding),
@@ -31,6 +36,7 @@ struct ReaderConfig
         get(config, :convert_text, default_convert_text), 
         get(config, :convert_header_text, default_convert_header_text),
         get(config, :include_columns, []),
+        get(config, :exclude_columns, []),
         get(config, :verbose_level, default_verbose_level))
 end
 
@@ -911,7 +917,7 @@ function read_chunk(handler, nrows=0)
     return Dict(
         :data => rslt, 
         :nrows => nrows, 
-        :ncols => nd+ns, 
+        :ncols => length(column_symbols), 
         :filename => handler.config.filename,
         :page_count => handler.current_page,
         :page_length => Int64(handler.page_length),
@@ -1461,15 +1467,24 @@ end
 # fill column indices as a dictionary (key = column index, value = column symbol)
 function fill_column_indices(handler)
     handler.column_indices = Vector{Tuple{Int64, Symbol, UInt8}}()
+    inflag = length(handler.config.include_columns) > 0
+    exflag = length(handler.config.exclude_columns) > 0
+    inflag && exflag && throw(ConfigError("You can specify either include_columns or exclude_columns but not both."))
     for j in 1:length(handler.column_symbols)
         name = handler.column_symbols[j]
-        if handler.config.include_columns == [] ||
-                j in handler.config.include_columns || 
-                name in handler.config.include_columns
+        if inflag 
+            if j in handler.config.include_columns || name in handler.config.include_columns
+                push!(handler.column_indices, (j, name, handler.column_types[j]))
+            end
+        elseif exflag 
+            if !(j in handler.config.exclude_columns || name in handler.config.exclude_columns)
+                push!(handler.column_indices, (j, name, handler.column_types[j]))
+            end
+        else
             push!(handler.column_indices, (j, name, handler.column_types[j]))
         end
     end
-    println3(handler, "column_indices = $(handler.column_indices)")
+    println2(handler, "column_indices = $(handler.column_indices)")
 end
 
 end # module
