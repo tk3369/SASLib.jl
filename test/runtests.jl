@@ -1,4 +1,4 @@
-using SASLib
+using SASLib, Missings
 using Base.Test
 
 @testset "SASLib" begin
