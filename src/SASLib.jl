@@ -22,6 +22,7 @@ struct ReaderConfig
     convert_dates::Bool
     convert_text::Bool
     convert_header_text::Bool
+    include_columns::Vector{Union{Symbol, Int64}}
     verbose_level::Int8
     ReaderConfig(filename, config = Dict()) = new(filename, 
         get(config, :encoding, default_encoding),
@@ -29,6 +30,7 @@ struct ReaderConfig
         get(config, :convert_dates, default_convert_dates), 
         get(config, :convert_text, default_convert_text), 
         get(config, :convert_header_text, default_convert_header_text),
+        get(config, :include_columns, []),
         get(config, :verbose_level, default_verbose_level))
 end
 
@@ -56,9 +58,14 @@ mutable struct Handler
     compression::Vector{UInt8}
     column_names_strings::Vector{Vector{UInt8}}
     column_names::Vector{AbstractString}
+    column_symbols::Vector{Symbol}
     column_types::Vector{UInt8}
     column_formats::Vector{AbstractString}
     columns::Vector{Column}
+
+    # column indices being read/returned 
+    # tuple of column index, column symbol, column type
+    column_indices::Vector{Tuple{Int64, Symbol, UInt8}}
     
     current_page_data_subheader_pointers::Vector{SubHeaderPointer}
     cached_page::Vector{UInt8}
@@ -123,6 +130,7 @@ function open(config::ReaderConfig)
     handler.compression = b""
     handler.column_names_strings = []
     handler.column_names = []
+    handler.column_symbols = []
     handler.columns = []
     handler.column_formats = []
     handler.current_page_data_subheader_pointers = []
@@ -725,6 +733,7 @@ function _process_columnname_subheader(handler, offset, length)
         #     name = decode(name, handler.config.encoding)
         # end
         push!(handler.column_names, name)
+        push!(handler.column_symbols, Symbol(name))
         println2(handler, " i=$i name=$name")
     end
 end
@@ -863,21 +872,21 @@ function read_chunk(handler, nrows=0)
     # TODO not the most efficient but normally it should be ok for non-wide tables
     nd = count(x -> x == column_type_decimal, handler.column_types)
     ns = count(x -> x == column_type_string,  handler.column_types)
-    
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
 
-    # allocate column space
+    fill_column_indices(handler)
+
+    # allocate columns
     handler.byte_chunk = Dict()
     handler.string_chunk = Dict()
-    for j in 1:nd+ns
-        name = Symbol(handler.column_names[j])
-        if handler.column_types[j] == column_type_decimal
+    for (k, name, ty) in handler.column_indices
+        if ty == column_type_decimal
             handler.byte_chunk[name] = fill(UInt8(0), Int64(8 * nrows)) # 8-byte values
-        elseif handler.column_types[j] == column_type_string
+        elseif ty == column_type_string
             handler.string_chunk[name] = fill(missing, Int64(nrows)) 
         else
-            throw(FileFormatError("unknown column type: $(handler.column_types[j])"))
+            throw(FileFormatError("unknown column type: $ty for column $name"))
         end
     end
 
@@ -894,6 +903,8 @@ function read_chunk(handler, nrows=0)
     rslt = _chunk_to_dataframe(handler)
     perf_chunk_to_data_frame = toq()
 
+    # construct column symbols/names from actual results since we may have
+    # read fewer columns than what's in the file
     column_symbols = [col for col in keys(rslt)]
     column_names = String.(column_symbols)
 
@@ -985,13 +996,9 @@ function _chunk_to_dataframe(handler)
     m = handler.current_row_in_file_index
     rslt = Dict()
 
-    # js, jb = 1, 1
     # println("handler.column_names=$(handler.column_names)")
-    for j in 1:handler.column_count
-
-        name = Symbol(handler.column_names[j])
-
-        if handler.column_types[j] == column_type_decimal  # number, date, or datetime
+    for (k, name, ty) in handler.column_indices
+        if ty == column_type_decimal  # number, date, or datetime
             # println("  String: size=$(size(handler.byte_chunk))")
             # println("  Decimal: column $j, name $name, size=$(size(handler.byte_chunk[jb, :]))")
             bytes = handler.byte_chunk[name]
@@ -1004,19 +1011,17 @@ function _chunk_to_dataframe(handler)
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
             if handler.config.convert_dates
-                if handler.column_formats[j] in sas_date_formats
+                if handler.column_formats[k] in sas_date_formats
                     rslt[name] = date_from_float(rslt[name])
-                elseif handler.column_formats[j] in sas_datetime_formats
+                elseif handler.column_formats[k] in sas_datetime_formats
                     # TODO probably have to deal with timezone somehow
                     rslt[name] = datetime_from_float(rslt[name])
                 end
             end
-            # jb += 1
-        elseif handler.column_types[j] == column_type_string
+        elseif ty == column_type_string
             # println("  String: size=$(size(handler.string_chunk))")
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
             rslt[name] = handler.string_chunk[name]
-            # js += 1
         else
             throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
         end
@@ -1176,31 +1181,11 @@ function process_byte_array_with_data(handler, offset, length)
     byte_chunk = handler.byte_chunk
     string_chunk = handler.string_chunk
     s = 8 * current_row
-    js = 1
-    jb = 1
-
-    # if current_row == 1
-    #     println("  current_row = $current_row")
-    #     println("  column_types = $column_types")
-    #     println("  lengths = $lengths")
-    #     println("  offsets = $offsets")
-    # end
-    # println("  s = $s")
-    # println("  handler.file_endianness = $(handler.file_endianness)")
-        
-    for j in 1:handler.column_count
-        name = Symbol(handler.column_names[j])
-        lngt = lengths[j]
-        # TODO commented out for perf reason. do we need this?
-        # if lngt == 0
-        #     break
-        # end
-        #if j == 1
-            # println("  lngt = $lngt")
-        #end
-        #println(lngt)
-        start = offsets[j]
-        ct = column_types[j]
+      
+    for (k, name, ty) in handler.column_indices
+        lngt = lengths[k]
+        start = offsets[k]
+        ct = column_types[k]
         if ct == column_type_decimal
             # The data may have 3,4,5,6,7, or 8 bytes (lngt)
             # and we need to copy into an 8-byte destination.
@@ -1215,12 +1200,9 @@ function process_byte_array_with_data(handler, offset, length)
             #     byte_chunk[jb, m + k] = source[start + k]
             # end
             byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
-            jb += 1
         elseif ct == column_type_string
             string_chunk[name][current_row+1] = 
                 rstrip(transcode(handler, source[start+1:(start+lngt)]))
-                #rstrip(decode(source[start+1:(start+lngt)], handler.config.encoding))
-            js += 1
         end
     end
 
@@ -1474,6 +1456,20 @@ function currentpos(handler)
         d[:current_row_in_chunk] = handler.current_row_in_chunk_index
     end
     return d
+end
+
+# fill column indices as a dictionary (key = column index, value = column symbol)
+function fill_column_indices(handler)
+    handler.column_indices = Vector{Tuple{Int64, Symbol, UInt8}}()
+    for j in 1:length(handler.column_symbols)
+        name = handler.column_symbols[j]
+        if handler.config.include_columns == [] ||
+                j in handler.config.include_columns || 
+                name in handler.config.include_columns
+            push!(handler.column_indices, (j, name, handler.column_types[j]))
+        end
+    end
+    println3(handler, "column_indices = $(handler.column_indices)")
 end
 
 end # module
