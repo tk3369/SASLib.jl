@@ -22,22 +22,13 @@ end
 struct ReaderConfig 
     filename::AbstractString
     encoding::AbstractString
-    chunksize::UInt8
+    chunksize::Int64
     convert_dates::Bool
     convert_text::Bool
     convert_header_text::Bool
-    include_columns::Vector{Union{Symbol, Int64}}
-    exclude_columns::Vector{Union{Symbol, Int64}}
-    verbose_level::Int8
-    ReaderConfig(filename, config = Dict()) = new(filename, 
-        get(config, :encoding, default_encoding),
-        get(config, :chunksize, default_chunksize),
-        get(config, :convert_dates, default_convert_dates), 
-        get(config, :convert_text, default_convert_text), 
-        get(config, :convert_header_text, default_convert_header_text),
-        get(config, :include_columns, []),
-        get(config, :exclude_columns, []),
-        get(config, :verbose_level, default_verbose_level))
+    include_columns::Vector
+    exclude_columns::Vector
+    verbose_level::Int64
 end
 
 struct Column
@@ -150,12 +141,17 @@ function open(config::ReaderConfig)
 end
 
 """
-Open a SAS7BDAT data file.  The `config` parameter accepts the same 
-settings as described in `SASLib.readsas()` function.  Returns a
-handler object.
+Open a SAS7BDAT data file.  Returns a handler object that can be used in
+the `read` function.
 """
-function open(fname::AbstractString, config=Dict())
-    return open(ReaderConfig(fname, config))
+function open(filename::AbstractString; 
+        encoding::AbstractString = default_encoding,
+        convert_dates::Bool = default_convert_dates,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
+    return open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
+        default_convert_header_text, include_columns, exclude_columns, verbose_level))
 end
 
 """
@@ -179,14 +175,17 @@ end
 
 """
 Read a SAS7BDAT file.  
-* `:encoding`: character encoding for strings (default: "UTF-8")
-* `:convert_text`: convert text data to strings (default: true)
-* `:convert_header_text`: convert header text data to strings (default: true)
 """
-function readsas(filename, config=Dict())
+function readsas(filename::AbstractString; 
+        encoding::AbstractString = default_encoding,
+        convert_dates::Bool = default_convert_dates,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
     handler = nothing
     try
-        handler = open(ReaderConfig(filename, config))
+        handler = open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
+            default_convert_header_text, include_columns, exclude_columns, verbose_level))
         # println(push!(history, handler))
         t1 = time()
         result = read(handler)
@@ -1170,10 +1169,10 @@ function process_byte_array_with_data(handler, offset, length)
     # println("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
         if handler.compression == rle_compression
-            #println("decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
+            # println4(handler, "decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
             source = rle_decompress(handler.row_length, source)
         elseif handler.compression == rdc_compression
-            #println("decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
+            # println4(handler, "decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
             source = rdc_decompress(handler.row_length, source)
         else
             throw(FileFormatError("Unknown compression method: $(handler.compression)"))
@@ -1206,6 +1205,7 @@ function process_byte_array_with_data(handler, offset, length)
             #     byte_chunk[jb, m + k] = source[start + k]
             # end
             byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
+            #println4(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
             string_chunk[name][current_row+1] = 
                 rstrip(transcode(handler, source[start+1:(start+lngt)]))
@@ -1438,10 +1438,11 @@ end
 
 # ---- Debugging methods ----
 
-# verbose printing.  1=little verbose, 2=medium verbose, 3=very verbose
-@inline println1(handler::Handler, msg) = handler.config.verbose_level >= 1 && println(msg)
-@inline println2(handler::Handler, msg) = handler.config.verbose_level >= 2 && println(msg)
-@inline println3(handler::Handler, msg) = handler.config.verbose_level >= 3 && println(msg)
+# verbose printing.  1=little verbose, 2=medium verbose, 3=very verbose, 4=very very verbose :-)
+@inline println1(handler::Handler, msg::String) = handler.config.verbose_level >= 1 && println(msg)
+@inline println2(handler::Handler, msg::String) = handler.config.verbose_level >= 2 && println(msg)
+@inline println3(handler::Handler, msg::String) = handler.config.verbose_level >= 3 && println(msg)
+@inline println4(handler::Handler, msg::String) = handler.config.verbose_level >= 4 && println(msg)
 
 # string representation of the SubHeaderPointer structure
 function tostring(x::SubHeaderPointer) 
