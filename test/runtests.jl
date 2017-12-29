@@ -44,10 +44,10 @@ using Base.Test
         result = readsas("datetime.sas7bdat")
         df = result[:data]
         @test (result[:nrows], result[:ncols]) == (5, 4)
-        @test x[:data][:mtg][1] == Date(2017, 11, 24)
-        @test x[:data][:dt][5] == DateTime(2018, 3, 31, 14, 20, 33)
-        @test count(ismissing, x[:data][:mtg]) == 1
-        @test count(ismissing, x[:data][:dt]) == 3
+        @test result[:data][:mtg][1] == Date(2017, 11, 24)
+        @test result[:data][:dt][5] == DateTime(2018, 3, 31, 14, 20, 33)
+        @test count(ismissing, result[:data][:mtg]) == 1
+        @test count(ismissing, result[:data][:dt]) == 3
     end
 
     @testset "misc" begin
