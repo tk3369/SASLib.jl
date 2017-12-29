@@ -121,7 +121,7 @@ mutable struct Handler
         config)
 end
 
-function open(config::ReaderConfig) 
+function _open(config::ReaderConfig) 
     # println("Opening $(config.filename)")
     handler = Handler(config)
     handler.compression = b""
@@ -141,8 +141,15 @@ function open(config::ReaderConfig)
 end
 
 """
-Open a SAS7BDAT data file.  Returns a handler object that can be used in
-the `read` function.
+open(filename::AbstractString; 
+        encoding::AbstractString = default_encoding,
+        convert_dates::Bool = default_convert_dates,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
+
+Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
+the subsequent `SASLib.read` and `SASLib.close` functions.
 """
 function open(filename::AbstractString; 
         encoding::AbstractString = default_encoding,
@@ -150,13 +157,15 @@ function open(filename::AbstractString;
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         verbose_level::Int64 = 1)
-    return open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
+    return _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
         default_convert_header_text, include_columns, exclude_columns, verbose_level))
 end
 
 """
-Read data from the `handler`.  If `nrows` is not specified, read the
-entire files content.  When called again, fetch the next `nrows` rows.
+read(handler::Handler, nrows=0) 
+
+Read data from the `handler` (see `SASLib.open`).  If `nrows` is not specified, 
+read the entire file content.  When called again, fetch the next `nrows` rows.
 """
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
@@ -164,8 +173,13 @@ function read(handler::Handler, nrows=0)
 end
 
 """
+close(handler::Handler) 
+
 Close the `handler` object.  This function effectively closes the
-underlying iostream.  It must be called if `open` and `read` 
+underlying iostream.  It must be called after the program 
+finished reading data.
+
+This function is needed only when `SASLib.open` and `SASLib.read` 
 functions are used instead of the more convenient `readsas` function.
 """
 function close(handler::Handler) 
@@ -174,7 +188,30 @@ function close(handler::Handler)
 end
 
 """
+readsas(filename::AbstractString; 
+        encoding::AbstractString = "UTF-8",
+        convert_dates::Bool = true,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
+
 Read a SAS7BDAT file.  
+
+The `encoding` argument may be used if string data does not have UTF-8 
+encoding.  
+
+If `convert_dates == false` then no conversion is made
+and you will get the number of days for Date columns (or number of 
+seconds for DateTime columns) since 1-JAN-1960.  
+
+By default, all columns will be read.  If you only need a subset of the 
+columns, you may specify
+either `include_columns` or `exclude_columns` but not both.  They are just 
+arrays of columns indices or symbols e.g. [1, 2, 3] or [:employeeid, :firstname, :lastname]
+
+For debugging purpose, `verbose_level` may be set to a value higher than 1.
+Verbose level 0 will output nothing to the console, essentially a total quiet 
+option.
 """
 function readsas(filename::AbstractString; 
         encoding::AbstractString = default_encoding,
@@ -184,7 +221,7 @@ function readsas(filename::AbstractString;
         verbose_level::Int64 = 1)
     handler = nothing
     try
-        handler = open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
+        handler = _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
             default_convert_header_text, include_columns, exclude_columns, verbose_level))
         # println(push!(history, handler))
         t1 = time()
@@ -880,7 +917,7 @@ function read_chunk(handler, nrows=0)
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
 
-    fill_column_indices(handler)
+    _fill_column_indices(handler)
 
     # allocate columns
     handler.byte_chunk = Dict()
@@ -1466,7 +1503,7 @@ function currentpos(handler)
 end
 
 # fill column indices as a dictionary (key = column index, value = column symbol)
-function fill_column_indices(handler)
+function _fill_column_indices(handler)
     handler.column_indices = Vector{Tuple{Int64, Symbol, UInt8}}()
     inflag = length(handler.config.include_columns) > 0
     exflag = length(handler.config.exclude_columns) > 0
