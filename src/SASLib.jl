@@ -106,8 +106,8 @@ mutable struct Handler
     column_count::Int64
     # creator_proc::Union{Void, Vector{UInt8}}
 
-    byte_chunk::Array{UInt8, 2}
-    string_chunk::Array{String, 2}
+    byte_chunk::Dict{Symbol, Vector{UInt8}}
+    string_chunk::Dict{Symbol, Vector{Union{Missing, AbstractString}}}
     current_row_in_chunk_index::Int64
 
     current_page::Int64
@@ -866,8 +866,20 @@ function read_chunk(handler, nrows=0)
     
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
-    handler.string_chunk = fill("", (Int64(ns), Int64(nrows)))
-    handler.byte_chunk = fill(UInt8(0), (Int64(nd), Int64(8 * nrows))) # 8-byte values
+
+    # allocate column space
+    handler.byte_chunk = Dict()
+    handler.string_chunk = Dict()
+    for j in 1:nd+ns
+        name = Symbol(handler.column_names[j])
+        if handler.column_types[j] == column_type_decimal
+            handler.byte_chunk[name] = fill(UInt8(0), Int64(8 * nrows)) # 8-byte values
+        elseif handler.column_types[j] == column_type_string
+            handler.string_chunk[name] = fill(missing, Int64(nrows)) 
+        else
+            throw(FileFormatError("unknown column type: $(handler.column_types[j])"))
+        end
+    end
 
     # don't do this or else the state is polluted if user wants to 
     # read lines separately.
@@ -973,7 +985,7 @@ function _chunk_to_dataframe(handler)
     m = handler.current_row_in_file_index
     rslt = Dict()
 
-    js, jb = 1, 1
+    # js, jb = 1, 1
     # println("handler.column_names=$(handler.column_names)")
     for j in 1:handler.column_count
 
@@ -982,7 +994,7 @@ function _chunk_to_dataframe(handler)
         if handler.column_types[j] == column_type_decimal  # number, date, or datetime
             # println("  String: size=$(size(handler.byte_chunk))")
             # println("  Decimal: column $j, name $name, size=$(size(handler.byte_chunk[jb, :]))")
-            bytes = handler.byte_chunk[jb, :]
+            bytes = handler.byte_chunk[name]
             #if j == 1  && length(bytes) < 100  #debug only
                 # println("  bytes=$bytes")
             #end
@@ -999,12 +1011,12 @@ function _chunk_to_dataframe(handler)
                     rslt[name] = datetime_from_float(rslt[name])
                 end
             end
-            jb += 1
+            # jb += 1
         elseif handler.column_types[j] == column_type_string
             # println("  String: size=$(size(handler.string_chunk))")
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
-            rslt[name] = handler.string_chunk[js, :]
-            js += 1
+            rslt[name] = handler.string_chunk[name]
+            # js += 1
         else
             throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
         end
@@ -1177,6 +1189,7 @@ function process_byte_array_with_data(handler, offset, length)
     # println("  handler.file_endianness = $(handler.file_endianness)")
         
     for j in 1:handler.column_count
+        name = Symbol(handler.column_names[j])
         lngt = lengths[j]
         # TODO commented out for perf reason. do we need this?
         # if lngt == 0
@@ -1201,10 +1214,10 @@ function process_byte_array_with_data(handler, offset, length)
             # for k in 1:lngt
             #     byte_chunk[jb, m + k] = source[start + k]
             # end
-            @inbounds byte_chunk[jb, m+1:m+lngt] = source[start+1:start+lngt]
+            byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
             jb += 1
         elseif ct == column_type_string
-            @inbounds string_chunk[js, current_row+1] = 
+            string_chunk[name][current_row+1] = 
                 rstrip(transcode(handler, source[start+1:(start+lngt)]))
                 #rstrip(decode(source[start+1:(start+lngt)], handler.config.encoding))
             js += 1
