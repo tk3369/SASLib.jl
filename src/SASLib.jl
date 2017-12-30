@@ -15,21 +15,20 @@ struct FileFormatError <: Exception
     message::AbstractString
 end 
 
+struct ConfigError <: Exception
+    message::AbstractString
+end 
+
 struct ReaderConfig 
     filename::AbstractString
     encoding::AbstractString
-    chunksize::UInt8
+    chunksize::Int64
     convert_dates::Bool
     convert_text::Bool
     convert_header_text::Bool
-    verbose_level::Int8
-    ReaderConfig(filename, config = Dict()) = new(filename, 
-        get(config, :encoding, default_encoding),
-        get(config, :chunksize, default_chunksize),
-        get(config, :convert_dates, default_convert_dates), 
-        get(config, :convert_text, default_convert_text), 
-        get(config, :convert_header_text, default_convert_header_text),
-        get(config, :verbose_level, default_verbose_level))
+    include_columns::Vector
+    exclude_columns::Vector
+    verbose_level::Int64
 end
 
 struct Column
@@ -56,9 +55,14 @@ mutable struct Handler
     compression::Vector{UInt8}
     column_names_strings::Vector{Vector{UInt8}}
     column_names::Vector{AbstractString}
+    column_symbols::Vector{Symbol}
     column_types::Vector{UInt8}
     column_formats::Vector{AbstractString}
     columns::Vector{Column}
+
+    # column indices being read/returned 
+    # tuple of column index, column symbol, column type
+    column_indices::Vector{Tuple{Int64, Symbol, UInt8}}
     
     current_page_data_subheader_pointers::Vector{SubHeaderPointer}
     cached_page::Vector{UInt8}
@@ -106,8 +110,8 @@ mutable struct Handler
     column_count::Int64
     # creator_proc::Union{Void, Vector{UInt8}}
 
-    byte_chunk::Array{UInt8, 2}
-    string_chunk::Array{String, 2}
+    byte_chunk::Dict{Symbol, Vector{UInt8}}
+    string_chunk::Dict{Symbol, Vector{Union{Missing, AbstractString}}}
     current_row_in_chunk_index::Int64
 
     current_page::Int64
@@ -117,12 +121,13 @@ mutable struct Handler
         config)
 end
 
-function open(config::ReaderConfig) 
+function _open(config::ReaderConfig) 
     # println("Opening $(config.filename)")
     handler = Handler(config)
     handler.compression = b""
     handler.column_names_strings = []
     handler.column_names = []
+    handler.column_symbols = []
     handler.columns = []
     handler.column_formats = []
     handler.current_page_data_subheader_pointers = []
@@ -136,17 +141,31 @@ function open(config::ReaderConfig)
 end
 
 """
-Open a SAS7BDAT data file.  The `config` parameter accepts the same 
-settings as described in `SASLib.readsas()` function.  Returns a
-handler object.
+open(filename::AbstractString; 
+        encoding::AbstractString = default_encoding,
+        convert_dates::Bool = default_convert_dates,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
+
+Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
+the subsequent `SASLib.read` and `SASLib.close` functions.
 """
-function open(fname::AbstractString, config=Dict())
-    return open(ReaderConfig(fname, config))
+function open(filename::AbstractString; 
+        encoding::AbstractString = default_encoding,
+        convert_dates::Bool = default_convert_dates,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
+    return _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
+        default_convert_header_text, include_columns, exclude_columns, verbose_level))
 end
 
 """
-Read data from the `handler`.  If `nrows` is not specified, read the
-entire files content.  When called again, fetch the next `nrows` rows.
+read(handler::Handler, nrows=0) 
+
+Read data from the `handler` (see `SASLib.open`).  If `nrows` is not specified, 
+read the entire file content.  When called again, fetch the next `nrows` rows.
 """
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
@@ -154,8 +173,13 @@ function read(handler::Handler, nrows=0)
 end
 
 """
+close(handler::Handler) 
+
 Close the `handler` object.  This function effectively closes the
-underlying iostream.  It must be called if `open` and `read` 
+underlying iostream.  It must be called after the program 
+finished reading data.
+
+This function is needed only when `SASLib.open` and `SASLib.read` 
 functions are used instead of the more convenient `readsas` function.
 """
 function close(handler::Handler) 
@@ -164,15 +188,41 @@ function close(handler::Handler)
 end
 
 """
+readsas(filename::AbstractString; 
+        encoding::AbstractString = "UTF-8",
+        convert_dates::Bool = true,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
+
 Read a SAS7BDAT file.  
-* `:encoding`: character encoding for strings (default: "UTF-8")
-* `:convert_text`: convert text data to strings (default: true)
-* `:convert_header_text`: convert header text data to strings (default: true)
+
+The `encoding` argument may be used if string data does not have UTF-8 
+encoding.  
+
+If `convert_dates == false` then no conversion is made
+and you will get the number of days for Date columns (or number of 
+seconds for DateTime columns) since 1-JAN-1960.  
+
+By default, all columns will be read.  If you only need a subset of the 
+columns, you may specify
+either `include_columns` or `exclude_columns` but not both.  They are just 
+arrays of columns indices or symbols e.g. [1, 2, 3] or [:employeeid, :firstname, :lastname]
+
+For debugging purpose, `verbose_level` may be set to a value higher than 1.
+Verbose level 0 will output nothing to the console, essentially a total quiet 
+option.
 """
-function readsas(filename, config=Dict())
+function readsas(filename::AbstractString; 
+        encoding::AbstractString = default_encoding,
+        convert_dates::Bool = default_convert_dates,
+        include_columns::Vector = [],
+        exclude_columns::Vector = [],
+        verbose_level::Int64 = 1)
     handler = nothing
     try
-        handler = open(ReaderConfig(filename, config))
+        handler = _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
+            default_convert_header_text, include_columns, exclude_columns, verbose_level))
         # println(push!(history, handler))
         t1 = time()
         result = read(handler)
@@ -725,6 +775,7 @@ function _process_columnname_subheader(handler, offset, length)
         #     name = decode(name, handler.config.encoding)
         # end
         push!(handler.column_names, name)
+        push!(handler.column_symbols, Symbol(name))
         println2(handler, " i=$i name=$name")
     end
 end
@@ -863,11 +914,23 @@ function read_chunk(handler, nrows=0)
     # TODO not the most efficient but normally it should be ok for non-wide tables
     nd = count(x -> x == column_type_decimal, handler.column_types)
     ns = count(x -> x == column_type_string,  handler.column_types)
-    
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
-    handler.string_chunk = fill("", (Int64(ns), Int64(nrows)))
-    handler.byte_chunk = fill(UInt8(0), (Int64(nd), Int64(8 * nrows))) # 8-byte values
+
+    _fill_column_indices(handler)
+
+    # allocate columns
+    handler.byte_chunk = Dict()
+    handler.string_chunk = Dict()
+    for (k, name, ty) in handler.column_indices
+        if ty == column_type_decimal
+            handler.byte_chunk[name] = fill(UInt8(0), Int64(8 * nrows)) # 8-byte values
+        elseif ty == column_type_string
+            handler.string_chunk[name] = fill(missing, Int64(nrows)) 
+        else
+            throw(FileFormatError("unknown column type: $ty for column $name"))
+        end
+    end
 
     # don't do this or else the state is polluted if user wants to 
     # read lines separately.
@@ -882,13 +945,15 @@ function read_chunk(handler, nrows=0)
     rslt = _chunk_to_dataframe(handler)
     perf_chunk_to_data_frame = toq()
 
+    # construct column symbols/names from actual results since we may have
+    # read fewer columns than what's in the file
     column_symbols = [col for col in keys(rslt)]
     column_names = String.(column_symbols)
 
     return Dict(
         :data => rslt, 
         :nrows => nrows, 
-        :ncols => nd+ns, 
+        :ncols => length(column_symbols), 
         :filename => handler.config.filename,
         :page_count => handler.current_page,
         :page_length => Int64(handler.page_length),
@@ -973,16 +1038,12 @@ function _chunk_to_dataframe(handler)
     m = handler.current_row_in_file_index
     rslt = Dict()
 
-    js, jb = 1, 1
     # println("handler.column_names=$(handler.column_names)")
-    for j in 1:handler.column_count
-
-        name = Symbol(handler.column_names[j])
-
-        if handler.column_types[j] == column_type_decimal  # number, date, or datetime
+    for (k, name, ty) in handler.column_indices
+        if ty == column_type_decimal  # number, date, or datetime
             # println("  String: size=$(size(handler.byte_chunk))")
             # println("  Decimal: column $j, name $name, size=$(size(handler.byte_chunk[jb, :]))")
-            bytes = handler.byte_chunk[jb, :]
+            bytes = handler.byte_chunk[name]
             #if j == 1  && length(bytes) < 100  #debug only
                 # println("  bytes=$bytes")
             #end
@@ -992,19 +1053,17 @@ function _chunk_to_dataframe(handler)
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
             if handler.config.convert_dates
-                if handler.column_formats[j] in sas_date_formats
+                if handler.column_formats[k] in sas_date_formats
                     rslt[name] = date_from_float(rslt[name])
-                elseif handler.column_formats[j] in sas_datetime_formats
+                elseif handler.column_formats[k] in sas_datetime_formats
                     # TODO probably have to deal with timezone somehow
                     rslt[name] = datetime_from_float(rslt[name])
                 end
             end
-            jb += 1
-        elseif handler.column_types[j] == column_type_string
+        elseif ty == column_type_string
             # println("  String: size=$(size(handler.string_chunk))")
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
-            rslt[name] = handler.string_chunk[js, :]
-            js += 1
+            rslt[name] = handler.string_chunk[name]
         else
             throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
         end
@@ -1147,10 +1206,10 @@ function process_byte_array_with_data(handler, offset, length)
     # println("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
         if handler.compression == rle_compression
-            #println("decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
+            # println4(handler, "decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
             source = rle_decompress(handler.row_length, source)
         elseif handler.compression == rdc_compression
-            #println("decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
+            # println4(handler, "decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
             source = rdc_decompress(handler.row_length, source)
         else
             throw(FileFormatError("Unknown compression method: $(handler.compression)"))
@@ -1164,30 +1223,11 @@ function process_byte_array_with_data(handler, offset, length)
     byte_chunk = handler.byte_chunk
     string_chunk = handler.string_chunk
     s = 8 * current_row
-    js = 1
-    jb = 1
-
-    # if current_row == 1
-    #     println("  current_row = $current_row")
-    #     println("  column_types = $column_types")
-    #     println("  lengths = $lengths")
-    #     println("  offsets = $offsets")
-    # end
-    # println("  s = $s")
-    # println("  handler.file_endianness = $(handler.file_endianness)")
-        
-    for j in 1:handler.column_count
-        lngt = lengths[j]
-        # TODO commented out for perf reason. do we need this?
-        # if lngt == 0
-        #     break
-        # end
-        #if j == 1
-            # println("  lngt = $lngt")
-        #end
-        #println(lngt)
-        start = offsets[j]
-        ct = column_types[j]
+      
+    for (k, name, ty) in handler.column_indices
+        lngt = lengths[k]
+        start = offsets[k]
+        ct = column_types[k]
         if ct == column_type_decimal
             # The data may have 3,4,5,6,7, or 8 bytes (lngt)
             # and we need to copy into an 8-byte destination.
@@ -1201,13 +1241,11 @@ function process_byte_array_with_data(handler, offset, length)
             # for k in 1:lngt
             #     byte_chunk[jb, m + k] = source[start + k]
             # end
-            @inbounds byte_chunk[jb, m+1:m+lngt] = source[start+1:start+lngt]
-            jb += 1
+            @inbounds byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
+            #println4(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
-            @inbounds string_chunk[js, current_row+1] = 
+            @inbounds string_chunk[name][current_row+1] = 
                 rstrip(transcode(handler, source[start+1:(start+lngt)]))
-                #rstrip(decode(source[start+1:(start+lngt)], handler.config.encoding))
-            js += 1
         end
     end
 
@@ -1437,10 +1475,11 @@ end
 
 # ---- Debugging methods ----
 
-# verbose printing.  1=little verbose, 2=medium verbose, 3=very verbose
-@inline println1(handler::Handler, msg) = handler.config.verbose_level >= 1 && println(msg)
-@inline println2(handler::Handler, msg) = handler.config.verbose_level >= 2 && println(msg)
-@inline println3(handler::Handler, msg) = handler.config.verbose_level >= 3 && println(msg)
+# verbose printing.  1=little verbose, 2=medium verbose, 3=very verbose, 4=very very verbose :-)
+@inline println1(handler::Handler, msg::String) = handler.config.verbose_level >= 1 && println(msg)
+@inline println2(handler::Handler, msg::String) = handler.config.verbose_level >= 2 && println(msg)
+@inline println3(handler::Handler, msg::String) = handler.config.verbose_level >= 3 && println(msg)
+@inline println4(handler::Handler, msg::String) = handler.config.verbose_level >= 4 && println(msg)
 
 # string representation of the SubHeaderPointer structure
 function tostring(x::SubHeaderPointer) 
@@ -1461,6 +1500,29 @@ function currentpos(handler)
         d[:current_row_in_chunk] = handler.current_row_in_chunk_index
     end
     return d
+end
+
+# fill column indices as a dictionary (key = column index, value = column symbol)
+function _fill_column_indices(handler)
+    handler.column_indices = Vector{Tuple{Int64, Symbol, UInt8}}()
+    inflag = length(handler.config.include_columns) > 0
+    exflag = length(handler.config.exclude_columns) > 0
+    inflag && exflag && throw(ConfigError("You can specify either include_columns or exclude_columns but not both."))
+    for j in 1:length(handler.column_symbols)
+        name = handler.column_symbols[j]
+        if inflag 
+            if j in handler.config.include_columns || name in handler.config.include_columns
+                push!(handler.column_indices, (j, name, handler.column_types[j]))
+            end
+        elseif exflag 
+            if !(j in handler.config.exclude_columns || name in handler.config.exclude_columns)
+                push!(handler.column_indices, (j, name, handler.column_types[j]))
+            end
+        else
+            push!(handler.column_indices, (j, name, handler.column_types[j]))
+        end
+    end
+    println2(handler, "column_indices = $(handler.column_indices)")
 end
 
 end # module

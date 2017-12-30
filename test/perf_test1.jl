@@ -25,4 +25,4 @@ function perf(f, n)
     println("Average: $(total / n) seconds")
 end
 
-perf(() -> readsas(ARGS[1], Dict(:verbose_level => 0)), 10)
+perf(() -> readsas(ARGS[1], verbose_level = 0), 10)
