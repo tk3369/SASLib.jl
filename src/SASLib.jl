@@ -1241,10 +1241,10 @@ function process_byte_array_with_data(handler, offset, length)
             # for k in 1:lngt
             #     byte_chunk[jb, m + k] = source[start + k]
             # end
-            byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
+            @inbounds byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
             #println4(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
-            string_chunk[name][current_row+1] = 
+            @inbounds string_chunk[name][current_row+1] = 
                 rstrip(transcode(handler, source[start+1:(start+lngt)]))
         end
     end
