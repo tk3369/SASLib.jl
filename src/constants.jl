@@ -142,7 +142,6 @@ const encoding_names = Dict(
     140 => "EUC-KR"
 )
 
-
 const index_rowSizeIndex = 0
 const index_rowSizeIndex = 0
 const index_columnSizeIndex = 1
@@ -224,3 +223,6 @@ const zero_space = b"\x00 "
 const column_type_none    = 0x00
 const column_type_decimal = 0x01
 const column_type_string  = 0x02
+
+const VENDOR_STAT_TRANSFER = 0x00
+const VENDOR_SAS           = 0x01

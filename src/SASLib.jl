@@ -116,6 +116,9 @@ mutable struct Handler
 
     current_page::Int64
     
+    # vendor
+    vendor::UInt8
+    
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
         config)
@@ -320,7 +323,14 @@ function _get_properties(handler)
     end
     total_align = align1 + align2
     # println("successful reading alignment debugrmation")
-    # println("buf = $buf, align1 = $align1, align2 = $align2, total_align=$total_align")
+    # println3(handler, "align1 = $align1, align2 = $align2, total_align=$total_align")
+    # println3(handler, "header[33   ] = $([handler.cached_page[33]])       (align1)")
+    # println3(handler, "header[34:35] = $(handler.cached_page[34:35]) (unknown)")
+    # println3(handler, "header[36   ] = $([handler.cached_page[36]])       (align2)")
+    # println3(handler, "header[37   ] = $([handler.cached_page[37]])       (unknown)")
+    # println3(handler, "header[41:56] = $([handler.cached_page[41:56]]) (unknown)")
+    # println3(handler, "header[57:64] = $([handler.cached_page[57:64]]) (unknown)")
+    # println3(handler, "header[65:84] = $([handler.cached_page[65:84]]) (unknown)")
 
     # Get endianness information
     buf = _read_bytes(handler, endianness_offset, endianness_length)
@@ -394,6 +404,13 @@ function _get_properties(handler)
         throw(FileFormatError("The SAS7BDAT file appears to be truncated."))
     end
 
+    # debug
+    # println3(handler, "header[209+a1+a2] = $([handler.cached_page[209+align1+align2:209+align1+align2+8]]) (unknown)")
+    # println3(handler, "header[289+a1+a2] = $([handler.cached_page[289+align1+align2:289+align1+align2+8]]) (unknown)")
+    # println3(handler, "header[297+a1+a2] = $([handler.cached_page[297+align1+align2:297+align1+align2+8]]) (unknown)")
+    # println3(handler, "header[305+a1+a2] = $([handler.cached_page[305+align1+align2:305+align1+align2+8]]) (unknown)")
+    # println3(handler, "header[313+a1+a2] = $([handler.cached_page[313+align1+align2:313+align1+align2+8]]) (unknown)")
+
     handler.page_length = _read_int(handler, page_size_offset + align1, page_size_length)
     # println("page_length = $(handler.page_length)")
 
@@ -405,7 +422,11 @@ function _get_properties(handler)
     # if handler.config.convert_header_text
     #     handler.sas_release = transcode(handler.sas_release, handler.config.encoding)
     # end
-    # println("SAS Release = $(handler.sas_release)")
+    println2(handler, "SAS Release = $(handler.sas_release)")
+
+    # determine vendor - either SAS or STAT_TRANSFER
+    _determine_vendor(handler)
+    println2(handler, "Vendor = $(handler.vendor)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
     handler.server_type = transcode(handler, brstrip(buf, zero_space))
@@ -419,7 +440,7 @@ function _get_properties(handler)
     # if handler.config.convert_header_text
     #     handler.os_version = decode(handler.os_version, handler.config.encoding)
     # end
-    # println("os_version = $(handler.os_version)")
+    # println2(handler, "os_version = $(handler.os_version)")
     
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
     buf = brstrip(buf, zero_space)
@@ -491,22 +512,22 @@ function _process_page_metadata(handler)
     println3(handler, "  filepos=$(Base.position(handler.io))")
     println3(handler, "  loop from 0 to $(handler.current_page_subheaders_count-1)")
     for i in 0:handler.current_page_subheaders_count-1
-        println3(handler, " i=$i")
+        # println3(handler, " i=$i")
         pointer = _process_subheader_pointers(handler, subheader_pointers_offset + bit_offset, i)
         # ignore subheader when no data is present (variable QL == 0)
         if pointer.length == 0
-            println3(handler, "  pointer.length==0, ignoring subheader")
+            # println3(handler, "  pointer.length==0, ignoring subheader")
             continue
         end
         # subheader with truncated compression flag may be ignored (variable COMP == 1)
         if pointer.compression == subheader_comp_truncated
-            println3(handler, "  subheader truncated, ignoring subheader")
+            # println3(handler, "  subheader truncated, ignoring subheader")
             continue
         end
         subheader_signature = _read_subheader_signature(handler, pointer.offset)
         subheader_index = 
             _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.shtype)
-        println3(handler, "  subheader_index = $subheader_index")
+        # println3(handler, "  subheader_index = $subheader_index")
         if subheader_index == index_end_of_header
             break
         end
@@ -515,45 +536,40 @@ function _process_page_metadata(handler)
 end
 
 function _process_subheader_pointers(handler, offset, subheader_pointer_index)
-    println3(handler, "IN: _process_subheader_pointers")
-    println3(handler, "  offset=$offset (beginning of the pointers array)")
-    println3(handler, "  subheader_pointer_index=$subheader_pointer_index")
+    # println3(handler, "IN: _process_subheader_pointers")
+    # println3(handler, "  offset=$offset (beginning of the pointers array)")
+    # println3(handler, "  subheader_pointer_index=$subheader_pointer_index")
     
     # deference the array by index
     # handler.subheader_pointer_length is 12 or 24 (variable SL)
     total_offset = (offset + handler.subheader_pointer_length * subheader_pointer_index)
-    println3(handler, "  handler.subheader_pointer_length=$(handler.subheader_pointer_length)")
-    println3(handler, "  total_offset=$total_offset")
+    # println3(handler, "  handler.subheader_pointer_length=$(handler.subheader_pointer_length)")
+    # println3(handler, "  total_offset=$total_offset")
     
     # handler.int_length is either 4 or 8 (based on u64 flag)
     # subheader_offset contains where to find the subheader 
     subheader_offset = _read_int(handler, total_offset, handler.int_length)
-    println3(handler, "  subheader_offset=$subheader_offset")
+    # println3(handler, "  subheader_offset=$subheader_offset")
     total_offset += handler.int_length
-    println3(handler, "  total_offset=$total_offset")
+    # println3(handler, "  total_offset=$total_offset")
     
     # subheader_length contains the length of the subheader (variable QL)
     # QL is sometimes zero, which indicates that no data is referenced by the 
     # corresponding subheader pointer. When this occurs, the subheader pointer may be ignored.
     subheader_length = _read_int(handler, total_offset, handler.int_length)
-    println3(handler, "  subheader_length=$subheader_length")
+    # println3(handler, "  subheader_length=$subheader_length")
     total_offset += handler.int_length
-    println3(handler, "  total_offset=$total_offset")
+    # println3(handler, "  total_offset=$total_offset")
     
     # subheader_compression contains the compression flag (variable COMP)
     subheader_compression = _read_int(handler, total_offset, 1)
-    println3(handler, "  subheader_compression=$subheader_compression")
+    # println3(handler, "  subheader_compression=$subheader_compression")
     total_offset += 1
-    println3(handler, "  total_offset=$total_offset")
+    # println3(handler, "  total_offset=$total_offset")
     
     # subheader_type contains the subheader type (variable ST)    
     subheader_type = _read_int(handler, total_offset, 1)
 
-    # println("  returning subheader_offset=$subheader_offset")
-    # println("  returning subheader_length=$subheader_length")
-    # println("  returning subheader_compression=$subheader_compression")
-    # println("  returning subheader_type=$subheader_type")
-    
     return SubHeaderPointer(
                 subheader_offset, 
                 subheader_length, 
@@ -567,28 +583,21 @@ end
 function _read_subheader_signature(handler, offset)
     # println("IN: _read_subheader_signature (offset=$offset)")
     bytes = _read_bytes(handler, offset, handler.int_length)
-    # println("  bytes=$(bytes)")
     return bytes
 end
 
 # Identify the type of subheader from the signature
 function _get_subheader_index(handler, signature, compression, shtype)
-    println3(handler, "IN: _get_subheader_index")
-    println3(handler, "  signature=$signature")
-    println3(handler, "  compression=$compression <-> subheader_comp_compressed=$subheader_comp_compressed")
-    println3(handler, "  shtype=$shtype <-> subheader_comp_compressed=$subheader_comp_compressed")
+    # println3(handler, "IN: _get_subheader_index")
+    # println3(handler, "  signature=$signature")
+    # println3(handler, "  compression=$compression <-> subheader_comp_compressed=$subheader_comp_compressed")
+    # println3(handler, "  shtype=$shtype <-> subheader_comp_compressed=$subheader_comp_compressed")
     val = get(subheader_signature_to_index, signature, nothing)
 
     # if the signature is not found then it's likely storing binary data.
     # RLE (variable COMP == 4)
     # Uncompress (variable COMP == 0)
     if val == nothing
-        # f1 = ((compression == subheader_comp_compressed) || (compression == subheader_comp_uncompressed))
-        # println3(handler, "  f1=$f1")
-        # f2 = (shtype == subheader_comp_compressed)
-        # println3(handler, "  f2=$f2")
-        # println3(handler, "  compression=$(handler.compression)")
-        # if (handler.compression != b"") && f1 && f2
         if compression == subheader_comp_uncompressed || compression == subheader_comp_compressed
             val = index_dataSubheaderIndex
         else
@@ -599,13 +608,11 @@ function _get_subheader_index(handler, signature, compression, shtype)
 end
 
 function _process_subheader(handler, subheader_index, pointer)
-    println3(handler, "IN: _process_subheader")
+    # println3(handler, "IN: _process_subheader")
     offset = pointer.offset
     length = pointer.length
     
-    println3(handler, "  $(tostring(pointer))")
-    # println("  offset=$offset")
-    # println("  length=$length")
+    # println3(handler, "  $(tostring(pointer))")
 
     if subheader_index == index_rowSizeIndex
         processor = _process_rowsize_subheader
@@ -658,17 +665,9 @@ function _process_rowsize_subheader(handler, offset, length)
     handler.lcs = _read_int(handler, lcs_offset, 2)
     handler.lcp = _read_int(handler, lcp_offset, 2)
 
-    # println("  int_len=$int_len")
-    # println("  lcs_offset=$lcs_offset")
-    # println("  lcp_offset=$lcp_offset")
-    println3(handler, "  handler.row_length=$(handler.row_length)")
-    println3(handler, "  handler.row_count=$(handler.row_count)")
-    # println("  handler.col_count_p1=$(handler.col_count_p1)")
-    # println("  handler.col_count_p2=$(handler.col_count_p2)")
-    # println("  mx=$mx")
-    println3(handler, "  handler.mix_page_row_count=$(handler.mix_page_row_count)")
-    # println("  handler.lcs=$(handler.lcs)")
-    # println("  handler.lcp=$(handler.lcp)")
+    # println3(handler, "  handler.row_length=$(handler.row_length)")
+    # println3(handler, "  handler.row_count=$(handler.row_count)")
+    # println3(handler, "  handler.mix_page_row_count=$(handler.mix_page_row_count)")
 end
 
 function _process_columnsize_subheader(handler, offset, length)
@@ -939,13 +938,13 @@ function read_chunk(handler, nrows=0)
 
     if !isdefined(handler, :column_types)
         warn("No columns to parse from file")
-        return Dict()
+        return nullresult(handler.config.filename)
     end
     # println("column_types = $(handler.column_types)")
     
     # println("current_row_in_file_index = $(handler.current_row_in_file_index)")    
     if handler.current_row_in_file_index >= handler.row_count
-        return Dict()
+        error("Bug: $(handler.current_row_in_file_index) >= $(handler.row_count)")
     end
 
     # println("row_count = $(handler.row_count)")    
@@ -1013,6 +1012,15 @@ function read_chunk(handler, nrows=0)
         :perf_read_data => perf_read_data,
         :perf_type_conversion => perf_chunk_to_data_frame
         )
+end
+
+function nullresult(filename)
+    Dict(
+        :data => Dict(), 
+        :nrows => 0, 
+        :ncols => 0, 
+        :filename => filename
+    )
 end
 
 function _read_next_page_content(handler)
@@ -1173,8 +1181,8 @@ function readline(handler)
             end
             current_subheader_pointer = 
                 handler.current_page_data_subheader_pointers[handler.current_row_in_page_index+1]
-                println3(handler, "    current_subheader_pointer = $(current_subheader_pointer)")
-                println3(handler, "    handler.compression = $(handler.compression)")
+                # println3(handler, "    current_subheader_pointer = $(current_subheader_pointer)")
+                # println3(handler, "    handler.compression = $(handler.compression)")
                 cm = compression_method_none
                 if current_subheader_pointer.compression == subheader_comp_compressed
                     if handler.compression != compression_method_none
@@ -1189,24 +1197,24 @@ function readline(handler)
             return false
         elseif (handler.current_page_type == page_mix_types[1] ||
                 handler.current_page_type == page_mix_types[2])
-            #println("    page type == page_mix_types_1/2")
-            align_correction = (handler.page_bit_offset + subheader_pointers_offset +
-                                handler.current_page_subheaders_count *
-                                subheader_pointer_length)
-            # println("    align_correction = $align_correction")
-            align_correction = align_correction % 8
-            # println("    align_correction = $align_correction")
-            offset = handler.page_bit_offset + align_correction
-            # println("    offset = $offset")
+            # println3(handler, "  page type == page_mix_types_1/2")
+
+            offset = handler.page_bit_offset 
             offset += subheader_pointers_offset
-            # println("    offset = $offset")
-            offset += (handler.current_page_subheaders_count *
-                    subheader_pointer_length)
-            # println("    offset = $offset")
-            # println("    handler.current_row_in_page_index = $(handler.current_row_in_page_index)")
-            # println("    handler.row_length = $(handler.row_length)")
+            offset += (handler.current_page_subheaders_count * subheader_pointer_length)
+
+            align_correction = offset % 8
+            offset += align_correction
+
+            # hack for stat_transfer files
+            if align_correction == 4 && handler.vendor == VENDOR_STAT_TRANSFER 
+                # println3(handler, "alignment hack, vendor=$(handler.vendor) align_correction=$align_correction")
+                offset -= align_correction
+            end
+
+            # locate the row
             offset += handler.current_row_in_page_index * handler.row_length
-            # println("    offset = $offset")
+
             process_byte_array_with_data(handler, offset, handler.row_length, handler.compression)
             mn = min(handler.row_count, handler.mix_page_row_count)
             # println("    handler.current_row_in_page_index=$(handler.current_row_in_page_index)")
@@ -1254,6 +1262,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
     # source = np.frombuffer(
     #     handler.cached_page[offset:offset + length], dtype=np.uint8)
     source = handler.cached_page[offset+1:offset+length]
+    source2= handler.cached_page[offset+1-4:offset+length-4]
 
     # TODO decompression 
     # if handler.decompress != NULL and (length < handler.row_length)
@@ -1261,16 +1270,16 @@ function process_byte_array_with_data(handler, offset, length, compression)
     # println("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
         if compression == compression_method_rle
-            println3(handler, "decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
+            # println3(handler, "decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
             source = rle_decompress(handler.row_length, source)
         elseif compression == compression_method_rdc
-            println3(handler, "decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
+            # println3(handler, "decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
             source = rdc_decompress(handler.row_length, source)
         else
-            println3(handler, "process_byte_array_with_data")
-            println3(handler, "  length=$length")
-            println3(handler, "  handler.row_length=$(handler.row_length)")
-            println3(handler, "  source=$source")
+            # println3(handler, "process_byte_array_with_data")
+            # println3(handler, "  length=$length")
+            # println3(handler, "  handler.row_length=$(handler.row_length)")
+            # println3(handler, "  source=$source")
             throw(FileFormatError("Unknown compression method: $(handler.compression)"))
         end
     end
@@ -1296,6 +1305,13 @@ function process_byte_array_with_data(handler, offset, length, compression)
             else
                 m = s
             end
+            # if current_row == 0 && k == 1
+            #     println3(handler, "First cell:")
+            #     println3(handler, "  k=$k name=$name ty=$ty")
+            #     println3(handler, "  s=$s m=$m lngt=$lngt start=$start")
+            #     println3(handler, "  source =$(source[start+1:start+lngt])")
+            #     println3(handler, "  source2=$(source2[start+1:start+lngt])")
+            # end
             dst = handler.byte_chunk[name]
             for k in 1:lngt
                 @inbounds dst[m + k] = source[start + k]
@@ -1570,6 +1586,20 @@ function _fill_column_indices(handler)
         end
     end
     println2(handler, "column_indices = $(handler.column_indices)")
+end
+
+function _determine_vendor(handler::Handler)
+    # convert a release string into "9.0401M1" into 3 separate numbers
+    (version, revision) = split(handler.sas_release, "M")
+    (major, minor) = split(version, ".")
+    (major, minor, revision) = parse.(Int, (major, minor, revision))
+
+    if major == 9 && minor == 0 && revision == 0
+        # A bit of a hack, but most SAS installations are running a minor update 
+        handler.vendor = VENDOR_STAT_TRANSFER
+    else
+        handler.vendor = VENDOR_SAS
+    end
 end
 
 end # module

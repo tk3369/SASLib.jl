@@ -95,6 +95,18 @@ using Base.Test
 		@test sum(df[:ACTUAL]) ≈ 730337.0
     end
 
+    @testset "stat_transfer" begin
+        fname = "types.sas7bdat"
+        println("=== $fname ===")
+        result = readsas(fname)
+        df = result[:data]
+        @test sum(df[:vbyte][1:2])   == 9
+        @test sum(df[:vint][1:2])    == 9
+        @test sum(df[:vlong][1:2])   == 9
+        @test sum(df[:vfloat][1:2])  ≈  10.14000010
+        @test sum(df[:vdouble][1:2]) ≈  10.14000000
+    end
+
 	@testset "exception" begin
         @test_throws SASLib.FileFormatError readsas("runtests.jl")
 	end
