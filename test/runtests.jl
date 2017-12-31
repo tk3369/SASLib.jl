@@ -14,6 +14,7 @@ using Base.Test
         files = filter(x -> endswith(x, "sas7bdat") && startswith(x, "test"), 
             Base.Filesystem.readdir())
         for f in files
+            println("=== $f ===")
             result = readsas(f)
             @test (result[:nrows], result[:ncols]) == (10, 100)
         end
@@ -21,6 +22,7 @@ using Base.Test
 
     @testset "incremental read" begin
         fname = "test1.sas7bdat"  # 10 rows
+        println("=== $fname ===")
         handler = SASLib.open(fname)
         @test handler.config.filename == fname
         result = SASLib.read(handler, 3)  # read 3 rows
@@ -32,7 +34,9 @@ using Base.Test
     end
 
     @testset "various data types" begin
-        result = readsas("test1.sas7bdat")
+        fname = "test1.sas7bdat" 
+        println("=== $fname ===")
+        result = readsas(fname)
         df = result[:data]
         @test sum(df[:Column1][1:5]) == 2.066
         @test count(isnan, df[:Column1]) == 1
@@ -41,7 +45,9 @@ using Base.Test
     end
 
     @testset "datetime with missing values" begin
-        result = readsas("datetime.sas7bdat")
+        fname = "datetime.sas7bdat" 
+        println("=== $fname ===")
+        result = readsas(fname)
         df = result[:data]
         @test (result[:nrows], result[:ncols]) == (5, 4)
         @test result[:data][:mtg][1] == Date(2017, 11, 24)
@@ -51,29 +57,37 @@ using Base.Test
     end
 
     @testset "include/exclude columns" begin
-        result = readsas("productsales.sas7bdat", include_columns=[:MONTH, :YEAR])
+        fname = "productsales.sas7bdat"
+
+        println("=== $fname ===")
+        result = readsas(fname, include_columns=[:MONTH, :YEAR])
         @test result[:ncols] == 2
         @test sort(result[:column_symbols]) == sort([:MONTH, :YEAR])
         
-        result = readsas("productsales.sas7bdat", include_columns=[1, 2, 7])
+        println("=== $fname ===")
+        result = readsas(fname, include_columns=[1, 2, 7])
         @test result[:ncols] == 3
         @test sort(result[:column_symbols]) == sort([:ACTUAL, :PREDICT, :PRODUCT])
 
-        result = readsas("productsales.sas7bdat", exclude_columns=[:DIVISION])
+        println("=== $fname ===")
+        result = readsas(fname, exclude_columns=[:DIVISION])
         @test result[:ncols] == 9
         @test !(:DIVISION in result[:column_symbols])
 
-        result = readsas("productsales.sas7bdat", exclude_columns=collect(2:10))
+        println("=== $fname ===")
+        result = readsas(fname, exclude_columns=collect(2:10))
         @test result[:ncols] == 1
         @test sort(result[:column_symbols]) == sort([:ACTUAL])
 
         # error handling
-        @test_throws SASLib.ConfigError readsas("productsales.sas7bdat", 
+        @test_throws SASLib.ConfigError readsas(fname, 
             include_columns=[1], exclude_columns=[1])
     end
 
     @testset "misc" begin
-        result = readsas("productsales.sas7bdat")
+        fname = "productsales.sas7bdat"
+        println("=== $fname ===")
+        result = readsas(fname)
         df = result[:data]
 		@test result[:ncols] == 10
 		@test result[:nrows] == 1440

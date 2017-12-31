@@ -45,14 +45,14 @@ struct SubHeaderPointer
     offset::Int64
     length::Int64
     compression::Int64
-    ptype::Int64
+    shtype::Int64
 end
 
 mutable struct Handler
     io::IOStream
     config::ReaderConfig
     
-    compression::Vector{UInt8}
+    compression::UInt8
     column_names_strings::Vector{Vector{UInt8}}
     column_names::Vector{AbstractString}
     column_symbols::Vector{Symbol}
@@ -124,7 +124,7 @@ end
 function _open(config::ReaderConfig) 
     # println("Opening $(config.filename)")
     handler = Handler(config)
-    handler.compression = b""
+    handler.compression = compression_method_none
     handler.column_names_strings = []
     handler.column_names = []
     handler.column_symbols = []
@@ -132,7 +132,7 @@ function _open(config::ReaderConfig)
     handler.column_formats = []
     handler.current_page_data_subheader_pointers = []
     handler.current_row_in_file_index = 0
-    #handler.current_row_in_chunk_index = 0
+    handler.current_row_in_chunk_index = 0
     handler.current_row_in_page_index = 0
     handler.current_page = 0
     _get_properties(handler)
@@ -437,10 +437,10 @@ end
 
 # Keep reading pages until a meta page is found
 function _parse_metadata(handler)
-    println2(handler, "IN: _parse_metadata")
+    println3(handler, "IN: _parse_metadata")
     done = false
     while !done
-        println2(handler, "  filepos=$(position(handler.io)) page_length=$(handler.page_length)")
+        println3(handler, "  filepos=$(position(handler.io)) page_length=$(handler.page_length)")
         handler.cached_page = Base.read(handler.io, handler.page_length)
         if length(handler.cached_page) <= 0
             break
@@ -453,14 +453,14 @@ function _parse_metadata(handler)
 end
 
 function _process_page_meta(handler)
-    println2(handler, "IN: _process_page_meta")
+    println3(handler, "IN: _process_page_meta")
     _read_page_header(handler)  
     pt = vcat([page_meta_type, page_amd_type], page_mix_types)
     # println("  pt=$pt handler.current_page_type=$(handler.current_page_type)")
     if handler.current_page_type in pt
-        println2(handler, "  current_page_type = $(pagetype(handler.current_page_type))")
-        println2(handler, "  current_page = $(handler.current_page)")
-        println2(handler, "  $(concatenate(stringarray(currentpos(handler))))")
+        println3(handler, "  current_page_type = $(pagetype(handler.current_page_type))")
+        println3(handler, "  current_page = $(handler.current_page)")
+        println3(handler, "  $(concatenate(stringarray(currentpos(handler))))")
         _process_page_metadata(handler)
     end
     # println("  condition var #1: handler.current_page_type=$(handler.current_page_type)")
@@ -471,63 +471,82 @@ function _process_page_meta(handler)
 end
 
 function _read_page_header(handler)
-    println2(handler, "IN: _read_page_header")
+    println3(handler, "IN: _read_page_header")
     bit_offset = handler.page_bit_offset
     tx = page_type_offset + bit_offset
     handler.current_page_type = _read_int(handler, tx, page_type_length)
     # println("  bit_offset=$bit_offset tx=$tx handler.current_page_type=$(handler.current_page_type)")
     tx = block_count_offset + bit_offset
     handler.current_page_block_count = _read_int(handler, tx, block_count_length)
-    # println("  tx=$tx handler.current_page_block_count=$(handler.current_page_block_count)")
+    println3(handler, "  tx=$tx handler.current_page_block_count=$(handler.current_page_block_count)")
     tx = subheader_count_offset + bit_offset
     handler.current_page_subheaders_count = _read_int(handler, tx, subheader_count_length)
-    # println("  tx=$tx handler.current_page_subheaders_count=$(handler.current_page_subheaders_count)")
+    println3(handler, "  tx=$tx handler.current_page_subheaders_count=$(handler.current_page_subheaders_count)")
 end
 
 function _process_page_metadata(handler)
-    println2(handler, "IN: _process_page_metadata")
+    println3(handler, "IN: _process_page_metadata")
     bit_offset = handler.page_bit_offset
     # println("  bit_offset=$bit_offset")
-    # println("  loop from 0 to $(handler.current_page_subheaders_count-1)")
+    println3(handler, "  filepos=$(Base.position(handler.io))")
+    println3(handler, "  loop from 0 to $(handler.current_page_subheaders_count-1)")
     for i in 0:handler.current_page_subheaders_count-1
+        println3(handler, " i=$i")
         pointer = _process_subheader_pointers(handler, subheader_pointers_offset + bit_offset, i)
+        # ignore subheader when no data is present (variable QL == 0)
         if pointer.length == 0
+            println3(handler, "  pointer.length==0, ignoring subheader")
             continue
         end
-        if pointer.compression == truncated_subheader_id
+        # subheader with truncated compression flag may be ignored (variable COMP == 1)
+        if pointer.compression == subheader_comp_truncated
+            println3(handler, "  subheader truncated, ignoring subheader")
             continue
         end
         subheader_signature = _read_subheader_signature(handler, pointer.offset)
-        subheader_index = (
-            _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.ptype, i))
+        subheader_index = 
+            _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.shtype)
+        println3(handler, "  subheader_index = $subheader_index")
+        if subheader_index == index_end_of_header
+            break
+        end
         _process_subheader(handler, subheader_index, pointer)
     end
 end
 
 function _process_subheader_pointers(handler, offset, subheader_pointer_index)
-    # println("IN: _process_subheader_pointers")
-    # println("  offset=$offset")
-    # println("  subheader_pointer_index=$subheader_pointer_index")
+    println3(handler, "IN: _process_subheader_pointers")
+    println3(handler, "  offset=$offset (beginning of the pointers array)")
+    println3(handler, "  subheader_pointer_index=$subheader_pointer_index")
     
+    # deference the array by index
+    # handler.subheader_pointer_length is 12 or 24 (variable SL)
     total_offset = (offset + handler.subheader_pointer_length * subheader_pointer_index)
-    # println("  handler.subheader_pointer_length=$(handler.subheader_pointer_length)")
-    # println("  total_offset=$total_offset")
+    println3(handler, "  handler.subheader_pointer_length=$(handler.subheader_pointer_length)")
+    println3(handler, "  total_offset=$total_offset")
     
+    # handler.int_length is either 4 or 8 (based on u64 flag)
+    # subheader_offset contains where to find the subheader 
     subheader_offset = _read_int(handler, total_offset, handler.int_length)
-    # println("  subheader_offset=$subheader_offset")
+    println3(handler, "  subheader_offset=$subheader_offset")
     total_offset += handler.int_length
-    # println("  total_offset=$total_offset")
+    println3(handler, "  total_offset=$total_offset")
     
+    # subheader_length contains the length of the subheader (variable QL)
+    # QL is sometimes zero, which indicates that no data is referenced by the 
+    # corresponding subheader pointer. When this occurs, the subheader pointer may be ignored.
     subheader_length = _read_int(handler, total_offset, handler.int_length)
-    # println("  subheader_length=$subheader_length")
+    println3(handler, "  subheader_length=$subheader_length")
     total_offset += handler.int_length
-    # println("  total_offset=$total_offset")
+    println3(handler, "  total_offset=$total_offset")
     
+    # subheader_compression contains the compression flag (variable COMP)
     subheader_compression = _read_int(handler, total_offset, 1)
-    # println("  subheader_compression=$subheader_compression")
+    println3(handler, "  subheader_compression=$subheader_compression")
     total_offset += 1
-    # println("  total_offset=$total_offset")
+    println3(handler, "  total_offset=$total_offset")
     
+    # subheader_type contains the subheader type (variable ST)    
     subheader_type = _read_int(handler, total_offset, 1)
 
     # println("  returning subheader_offset=$subheader_offset")
@@ -543,6 +562,8 @@ function _process_subheader_pointers(handler, offset, subheader_pointer_index)
 
 end
 
+# Read the subheader signature from the first 4 or 8 bytes.
+# `offset` contains the offset from the start of page that contains the subheader
 function _read_subheader_signature(handler, offset)
     # println("IN: _read_subheader_signature (offset=$offset)")
     bytes = _read_bytes(handler, offset, handler.int_length)
@@ -550,35 +571,41 @@ function _read_subheader_signature(handler, offset)
     return bytes
 end
 
-function _get_subheader_index(handler, signature, compression, ptype, idx)
-    # println("IN: _get_subheader_index (idx=$idx)")
-    # println("  signature=$signature")
-    # println("  compression=$compression <-> compressed_subheader_id=$compressed_subheader_id")
-    # println("  ptype=$ptype <-> compressed_subheader_type=$compressed_subheader_type")
+# Identify the type of subheader from the signature
+function _get_subheader_index(handler, signature, compression, shtype)
+    println3(handler, "IN: _get_subheader_index")
+    println3(handler, "  signature=$signature")
+    println3(handler, "  compression=$compression <-> subheader_comp_compressed=$subheader_comp_compressed")
+    println3(handler, "  shtype=$shtype <-> subheader_comp_compressed=$subheader_comp_compressed")
     val = get(subheader_signature_to_index, signature, nothing)
-    # println("  val=$val")
+
+    # if the signature is not found then it's likely storing binary data.
+    # RLE (variable COMP == 4)
+    # Uncompress (variable COMP == 0)
     if val == nothing
-        f1 = ((compression == compressed_subheader_id) || (compression == 0))
-        # println("  f1=$f1")
-        f2 = (ptype == compressed_subheader_type)
-        # println("  f2=$f2")
-        if (handler.compression != b"") && f1 && f2
+        # f1 = ((compression == subheader_comp_compressed) || (compression == subheader_comp_uncompressed))
+        # println3(handler, "  f1=$f1")
+        # f2 = (shtype == subheader_comp_compressed)
+        # println3(handler, "  f2=$f2")
+        # println3(handler, "  compression=$(handler.compression)")
+        # if (handler.compression != b"") && f1 && f2
+        if compression == subheader_comp_uncompressed || compression == subheader_comp_compressed
             val = index_dataSubheaderIndex
         else
-            throw(FileFormatError("Unknown subheader signature $(signature)"))
+            val = index_end_of_header
         end
     end
     return val
 end
 
 function _process_subheader(handler, subheader_index, pointer)
-    println2(handler, "IN: _process_subheader")
+    println3(handler, "IN: _process_subheader")
     offset = pointer.offset
     length = pointer.length
     
-    println2(handler, "  $(tostring(pointer))")
+    println3(handler, "  $(tostring(pointer))")
     # println("  offset=$offset")
-    # println("  length=$length")    
+    # println("  length=$length")
 
     if subheader_index == index_rowSizeIndex
         processor = _process_rowsize_subheader
@@ -597,6 +624,7 @@ function _process_subheader(handler, subheader_index, pointer)
     elseif subheader_index == index_subheaderCountsIndex
         processor = _process_subheader_counts
     elseif subheader_index == index_dataSubheaderIndex
+        # do not process immediately and just accumulate the pointers
         push!(handler.current_page_data_subheader_pointers, pointer)
         return
     else
@@ -606,7 +634,7 @@ function _process_subheader(handler, subheader_index, pointer)
 end
 
 function _process_rowsize_subheader(handler, offset, length)
-    println2(handler, "IN: _process_rowsize_subheader")
+    println3(handler, "IN: _process_rowsize_subheader")
     int_len = handler.int_length
     lcs_offset = offset
     lcp_offset = offset
@@ -633,12 +661,12 @@ function _process_rowsize_subheader(handler, offset, length)
     # println("  int_len=$int_len")
     # println("  lcs_offset=$lcs_offset")
     # println("  lcp_offset=$lcp_offset")
-    println2(handler, "  handler.row_length=$(handler.row_length)")
-    println2(handler, "  handler.row_count=$(handler.row_count)")
+    println3(handler, "  handler.row_length=$(handler.row_length)")
+    println3(handler, "  handler.row_count=$(handler.row_count)")
     # println("  handler.col_count_p1=$(handler.col_count_p1)")
     # println("  handler.col_count_p2=$(handler.col_count_p2)")
     # println("  mx=$mx")
-    println2(handler, "  handler.mix_page_row_count=$(handler.mix_page_row_count)")
+    println3(handler, "  handler.mix_page_row_count=$(handler.mix_page_row_count)")
     # println("  handler.lcs=$(handler.lcs)")
     # println("  handler.lcp=$(handler.lcp)")
 end
@@ -659,17 +687,20 @@ function _process_subheader_counts(handler, offset, length)
 end
 
 function _process_columntext_subheader(handler, offset, length)
-    # println("IN: _process_columntext_subheader")
+    println3(handler, "IN: _process_columntext_subheader")
     
-    offset += handler.int_length
-    text_block_size = _read_int(handler, offset, text_block_size_length)
-    # println("  before reading buf: text_block_size=$text_block_size")
+    p = offset + handler.int_length
+    text_block_size = _read_int(handler, p, text_block_size_length)
+    println3(handler, "  text_block_size=$text_block_size")
     # println("  before reading buf: offset=$offset")
 
-    buf = _read_bytes(handler, offset, text_block_size)
+    # TODO this buffer includes the text_block_size itself in the beginning...
+    buf = _read_bytes(handler, p, text_block_size)
     cname_raw = brstrip(buf[1:text_block_size], zero_space)
-    # println("  cname_raw=$cname_raw")
+    println3(handler, "  cname_raw=$cname_raw")
+
     cname = cname_raw
+    println3(handler, "  decoded=$(transcode(handler, cname))")
     # TK: do not decode at this time.... do it after extracting by column
     # if handler.config.convert_header_text
     #     cname = decode(cname, handler.config.encoding)
@@ -677,44 +708,57 @@ function _process_columntext_subheader(handler, offset, length)
     # println("  cname=$cname")
     push!(handler.column_names_strings, cname)
 
-    # println("  handler.column_names_strings=$(handler.column_names_strings)")
+    #println3(handler, "  handler.column_names_strings=$(handler.column_names_strings)")
     # println("  type=$(typeof(handler.column_names_strings))")
     # println("  content=$(handler.column_names_strings)")
-    # println("  content=$(size(handler.column_names_strings))")
+    # println3(handler, "  content=$(size(handler.column_names_strings, 2))")
 
+    # figure out some metadata if this is the first column 
     if size(handler.column_names_strings, 2) == 1
-        compression_literal = ""
-        for cl in compression_literals
-            if contains(cname_raw, cl)
-                compression_literal = cl
-            end
+
+        # check if there's compression signature 
+        if contains(cname_raw, rle_compression) 
+            compression_method = compression_method_rle
+        elseif contains(cname_raw, rdc_compression) 
+            compression_method = compression_method_rdc
+        else
+            compression_method = compression_method_none
         end
-        handler.compression = compression_literal
-        offset -= handler.int_length
-        # println("  handler.compression=$(handler.compression)")    
-        
+
+        println3(handler, "  handler.lcs = $(handler.lcs)")
+        println3(handler, "  handler.lcp = $(handler.lcp)")
+
+        # save compression info in the handler
+        handler.compression = compression_method
+
+        # look for the compression & creator proc offset (16 or 20)
         offset1 = offset + 16
         if handler.U64
             offset1 += 4
         end
 
-        buf = _read_bytes(handler, offset1, handler.lcp)
-        compression_literal = brstrip(buf, b"\x00")
-        if compression_literal == ""
+        # per doc, if first 8 bytes are _blank_ then file is not compressed, set LCS = 0
+        # howver, we will use the above signature identification method instead.
+        # buf = _read_bytes(handler, offset1, handler.lcp)
+        # compression_literal = brstrip(buf, b"\x00")
+        # if compression_literal == ""
+        if compression_method == compression_method_none
             handler.lcs = 0
             offset1 = offset + 32
             if handler.U64
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
-            # creator_proc = buf[1:handler.lcp]
-        elseif compression_literal == rle_compression
+            creator_proc = buf[1:handler.lcp]
+            println3(handler, "  uncompressed: creator proc=$creator_proc decoded=$(transcode(handler, creator_proc))")
+        elseif compression_method == compression_method_rle
             offset1 = offset + 40
             if handler.U64
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
-            # creator_proc = buf[1:handler.lcp]
+            creator_proc = buf[1:handler.lcp]
+            println3(handler, "  RLE compression: creator proc=$creator_proc decoded=$(transcode(handler, creator_proc))")
         elseif handler.lcs > 0
             handler.lcp = 0
             offset1 = offset + 16
@@ -722,7 +766,8 @@ function _process_columntext_subheader(handler, offset, length)
                 offset1 += 4
             end
             buf = _read_bytes(handler, offset1, handler.lcs)
-            # creator_proc = buf[1:handler.lcp]
+            creator_proc = buf[1:handler.lcp]
+            println3(handler, "  LCS>0: creator proc=$creator_proc decoded=$(transcode(handler, creator_proc))")
         # else
         #     creator_proc = nothing
         end
@@ -738,7 +783,7 @@ end
         
 
 function _process_columnname_subheader(handler, offset, length)
-    println2(handler, "IN: _process_columnname_subheader")
+    println3(handler, "IN: _process_columnname_subheader")
     int_len = handler.int_length
     # println(" int_len=$int_len")
     # println(" offset=$offset")    
@@ -776,7 +821,7 @@ function _process_columnname_subheader(handler, offset, length)
         # end
         push!(handler.column_names, name)
         push!(handler.column_symbols, Symbol(name))
-        println2(handler, " i=$i name=$name")
+        println3(handler, " i=$i name=$name")
     end
 end
 
@@ -971,12 +1016,12 @@ function read_chunk(handler, nrows=0)
 end
 
 function _read_next_page_content(handler)
-    println2(handler, "IN: _read_next_page_content")
-    println2(handler, "  positions = $(concatenate(stringarray(currentpos(handler))))")
+    println3(handler, "IN: _read_next_page_content")
+    println3(handler, "  positions = $(concatenate(stringarray(currentpos(handler))))")
     handler.current_page += 1
-    println2(handler, "  current_page = $(handler.current_page)")
-    println2(handler, "  file position = $(Base.position(handler.io))")
-    println2(handler, "  page_length = $(handler.page_length)")
+    println3(handler, "  current_page = $(handler.current_page)")
+    println3(handler, "  file position = $(Base.position(handler.io))")
+    println3(handler, "  page_length = $(handler.page_length)")
 
     handler.current_page_data_subheader_pointers = []
     handler.cached_page = Base.read(handler.io, handler.page_length)
@@ -990,9 +1035,9 @@ function _read_next_page_content(handler)
         _process_page_metadata(handler)
     end
 
-    println2(handler, "  type=$(pagetype(handler.current_page_type))")
+    println3(handler, "  type=$(pagetype(handler.current_page_type))")
     if ! (handler.current_page_type in page_meta_data_mix_types)
-        println2(handler, "page type not found $(handler.current_page_type)... reading next one")
+        println3(handler, "page type not found $(handler.current_page_type)... reading next one")
         return _read_next_page_content(handler)
     end
     return false
@@ -1128,10 +1173,19 @@ function readline(handler)
             end
             current_subheader_pointer = 
                 handler.current_page_data_subheader_pointers[handler.current_row_in_page_index+1]
-                # println("    current_subheader_pointer = $(current_subheader_pointer)")
+                println3(handler, "    current_subheader_pointer = $(current_subheader_pointer)")
+                println3(handler, "    handler.compression = $(handler.compression)")
+                cm = compression_method_none
+                if current_subheader_pointer.compression == subheader_comp_compressed
+                    if handler.compression != compression_method_none
+                        cm = handler.compression
+                    else
+                        cm = compression_method_rle  # default to RLE if handler doesn't have the info yet
+                    end
+                end
                 process_byte_array_with_data(handler,
                     current_subheader_pointer.offset,
-                    current_subheader_pointer.length)
+                    current_subheader_pointer.length, cm)
             return false
         elseif (handler.current_page_type == page_mix_types[1] ||
                 handler.current_page_type == page_mix_types[2])
@@ -1153,7 +1207,7 @@ function readline(handler)
             # println("    handler.row_length = $(handler.row_length)")
             offset += handler.current_row_in_page_index * handler.row_length
             # println("    offset = $offset")
-            process_byte_array_with_data(handler, offset, handler.row_length)
+            process_byte_array_with_data(handler, offset, handler.row_length, handler.compression)
             mn = min(handler.row_count, handler.mix_page_row_count)
             # println("    handler.current_row_in_page_index=$(handler.current_row_in_page_index)")
             # println("    mn = $mn")
@@ -1171,7 +1225,8 @@ function readline(handler)
             process_byte_array_with_data(handler,
                 handler.page_bit_offset + subheader_pointers_offset +
                 handler.current_row_in_page_index * handler.row_length,
-                handler.row_length)
+                handler.row_length,
+                handler.compression)
             # println("    handler.current_row_in_page_index=$(handler.current_row_in_page_index)")
             # println("    handler.current_page_block_count=$(handler.current_page_block_count)")
             flag = (handler.current_row_in_page_index == handler.current_page_block_count)
@@ -1191,7 +1246,7 @@ function readline(handler)
     end
 end
 
-function process_byte_array_with_data(handler, offset, length)
+function process_byte_array_with_data(handler, offset, length, compression)
 
     # println("IN: process_byte_array_with_data, offset=$offset, length=$length")
 
@@ -1205,29 +1260,32 @@ function process_byte_array_with_data(handler, offset, length)
     # println("  length=$length")
     # println("  handler.row_length=$(handler.row_length)")
     if length < handler.row_length
-        if handler.compression == rle_compression
-            # println4(handler, "decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
+        if compression == compression_method_rle
+            println3(handler, "decompress using rle_compression method, length=$length, row_length=$(handler.row_length)")
             source = rle_decompress(handler.row_length, source)
-        elseif handler.compression == rdc_compression
-            # println4(handler, "decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
+        elseif compression == compression_method_rdc
+            println3(handler, "decompress using rdc_compression method, length=$length, row_length=$(handler.row_length)")
             source = rdc_decompress(handler.row_length, source)
         else
+            println3(handler, "process_byte_array_with_data")
+            println3(handler, "  length=$length")
+            println3(handler, "  handler.row_length=$(handler.row_length)")
+            println3(handler, "  source=$source")
             throw(FileFormatError("Unknown compression method: $(handler.compression)"))
         end
     end
 
     current_row = handler.current_row_in_chunk_index
-    column_types = handler.column_types
-    lengths = handler.column_data_lengths
-    offsets = handler.column_data_offsets
-    byte_chunk = handler.byte_chunk
-    string_chunk = handler.string_chunk
     s = 8 * current_row
       
+    # TODO PERF there's not reason to deference by name everytime.
+    #    Ideally, we can still go by the result's column index
+    #    and then only at the very end (outer loop) we assign them to 
+    #    the column symbols
     for (k, name, ty) in handler.column_indices
-        lngt = lengths[k]
-        start = offsets[k]
-        ct = column_types[k]
+        lngt = handler.column_data_lengths[k]
+        start = handler.column_data_offsets[k]
+        ct = handler.column_types[k]
         if ct == column_type_decimal
             # The data may have 3,4,5,6,7, or 8 bytes (lngt)
             # and we need to copy into an 8-byte destination.
@@ -1238,13 +1296,14 @@ function process_byte_array_with_data(handler, offset, length)
             else
                 m = s
             end
-            # for k in 1:lngt
-            #     byte_chunk[jb, m + k] = source[start + k]
-            # end
-            @inbounds byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
-            #println4(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
+            dst = handler.byte_chunk[name]
+            for k in 1:lngt
+                @inbounds dst[m + k] = source[start + k]
+            end
+            # @inbounds handler.byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
+            #println3(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
-            @inbounds string_chunk[name][current_row+1] = 
+            @inbounds handler.string_chunk[name][current_row+1] = 
                 rstrip(transcode(handler, source[start+1:(start+lngt)]))
         end
     end
@@ -1263,126 +1322,114 @@ end
     end
 end
 
-# rle_decompress decompresses data using a Run Length Encoding
-# algorithm.  It is partially documented here:
-#
-# https://cran.r-project.org/web/packages/sas7bdat/vignettes/sas7bdat.pdf
-function rle_decompress(result_length,  inbuff::Vector{UInt8})
+# Courtesy of ReadStat project
+# https://github.com/WizardMac/ReadStat
 
-    #control_byte::UInt8
-    #x::UInt8
-    result = zeros(UInt8, result_length)
-    rpos = 1
+const SAS_RLE_COMMAND_COPY64          = 0
+const SAS_RLE_COMMAND_INSERT_BYTE18   = 4
+const SAS_RLE_COMMAND_INSERT_AT17     = 5
+const SAS_RLE_COMMAND_INSERT_BLANK17  = 6
+const SAS_RLE_COMMAND_INSERT_ZERO17   = 7
+const SAS_RLE_COMMAND_COPY1           = 8
+const SAS_RLE_COMMAND_COPY17          = 9
+const SAS_RLE_COMMAND_COPY33          = 10 # 0x0A
+const SAS_RLE_COMMAND_COPY49          = 11 # 0x0B
+const SAS_RLE_COMMAND_INSERT_BYTE3    = 12 # 0x0C
+const SAS_RLE_COMMAND_INSERT_AT2      = 13 # 0x0D
+const SAS_RLE_COMMAND_INSERT_BLANK2   = 14 # 0x0E
+const SAS_RLE_COMMAND_INSERT_ZERO2    = 15 # 0x0F
+
+function rle_decompress(output_len,  input::Vector{UInt8})
+    #error("stopped for debugging $output_len $input")
+    input_len = length(input)
+    output = zeros(UInt8, output_len)
+    # logdebug("rle_decompress: output_len=$output_len, input_len=$input_len")
+
     ipos = 1
-    len = length(inbuff)
-    #i, nbytes, end_of_first_byte
-
-    while ipos < len
-        control_byte = inbuff[ipos] & 0xF0
-        end_of_first_byte = inbuff[ipos] & 0x0F
-        ipos += 1
-
-        if control_byte == 0x00
-            if end_of_first_byte != 0
-                throw(FileFormatError("Unexpected non-zero end_of_first_byte"))
-            end
-            nbytes = inbuff[ipos] + 64
+    rpos = 1
+    while ipos <= input_len
+        control = input[ipos]
+        ipos += 1 
+        command = (control & 0xF0) >> 4
+        dlen    = (control & 0x0F)
+        copy_len = 0
+        insert_len = 0
+        insert_byte = 0x00
+        if command == SAS_RLE_COMMAND_COPY64
+            # logdebug("  SAS_RLE_COMMAND_COPY64")
+            copy_len = input[ipos] + 64 + dlen * 256
             ipos += 1
-            for i in 1:nbytes
-                result[rpos] = inbuff[ipos]
-                rpos += 1
-                ipos += 1
-            end
-        elseif control_byte == 0x40
-            # not documented
-            nbytes = end_of_first_byte * 16
-            nbytes += inbuff[ipos]
+        elseif command == SAS_RLE_COMMAND_INSERT_BYTE18
+            # logdebug("  SAS_RLE_COMMAND_INSERT_BYTE18")
+            insert_len  = input[ipos] + 18 + dlen * 16
             ipos += 1
-            for i in 1:nbytes
-                result[rpos] = inbuff[ipos]
-                rpos += 1
-            end
+            insert_byte = input[ipos]
             ipos += 1
-        elseif control_byte == 0x60
-            nbytes = end_of_first_byte * 256 + inbuff[ipos] + 17
+        elseif command == SAS_RLE_COMMAND_INSERT_AT17
+            # logdebug("  SAS_RLE_COMMAND_INSERT_AT17")
+            insert_len  = input[ipos] + 17 + dlen * 256
+            insert_byte = 0x40   # char: @
             ipos += 1
-            for i in 1:nbytes
-                result[rpos] = 0x20
-                rpos += 1
-            end
-        elseif control_byte == 0x70
-            nbytes = end_of_first_byte * 256 + inbuff[ipos] + 17
+        elseif command == SAS_RLE_COMMAND_INSERT_BLANK17
+            # logdebug("  SAS_RLE_COMMAND_INSERT_BLANK17")
+            insert_len  = input[ipos] + 17 + dlen * 256
+            insert_byte = 0x20   # char: <space>
             ipos += 1
-            for i in 1:nbytes
-                result[rpos] = 0x00
-                rpos += 1
-            end
-        elseif control_byte == 0x80
-            nbytes = end_of_first_byte + 1
-            for i in 1:nbytes
-                result[rpos] = inbuff[ipos + i - 1]
-                rpos += 1
-            end
-            ipos += nbytes
-        elseif control_byte == 0x90
-            nbytes = end_of_first_byte + 17
-            for i in 1:nbytes
-                result[rpos] = inbuff[ipos + i - 1]
-                rpos += 1
-            end
-            ipos += nbytes
-        elseif control_byte == 0xA0
-            nbytes = end_of_first_byte + 33
-            for i in 1:nbytes
-                result[rpos] = inbuff[ipos + i - 1]
-                rpos += 1
-            end
-            ipos += nbytes
-        elseif control_byte == 0xB0
-            nbytes = end_of_first_byte + 49
-            for i in 1:nbytes
-                result[rpos] = inbuff[ipos + i - 1]
-                rpos += 1
-            end
-            ipos += nbytes
-        elseif control_byte == 0xC0
-            nbytes = end_of_first_byte + 3
-            x = inbuff[ipos]
+        elseif command == SAS_RLE_COMMAND_INSERT_ZERO17
+            # logdebug("  SAS_RLE_COMMAND_INSERT_ZERO17")
+            insert_len  = input[ipos] + 17 + dlen * 256
+            insert_byte = 0x00
             ipos += 1
-            for i in 1:nbytes
-                result[rpos] = x
-                rpos += 1
+        elseif command == SAS_RLE_COMMAND_COPY1
+            # logdebug("  SAS_RLE_COMMAND_COPY1")
+            copy_len = dlen + 1
+        elseif command == SAS_RLE_COMMAND_COPY17
+            # logdebug("  SAS_RLE_COMMAND_COPY17")
+            copy_len = dlen + 17
+        elseif command == SAS_RLE_COMMAND_COPY33
+            # logdebug("  SAS_RLE_COMMAND_COPY33")
+            copy_len = dlen + 33
+        elseif command == SAS_RLE_COMMAND_COPY49
+            # logdebug("  SAS_RLE_COMMAND_COPY49")
+            copy_len = dlen + 49
+        elseif command == SAS_RLE_COMMAND_INSERT_BYTE3
+            # logdebug("  SAS_RLE_COMMAND_INSERT_BYTE3")
+            insert_len  = dlen + 3
+            insert_byte = input[ipos]
+            ipos += 1
+        elseif command == SAS_RLE_COMMAND_INSERT_AT2
+            # logdebug("  SAS_RLE_COMMAND_INSERT_AT2")
+            insert_len  = dlen + 2
+            insert_byte = 0x40   # char: @
+        elseif command == SAS_RLE_COMMAND_INSERT_BLANK2
+            # logdebug("  SAS_RLE_COMMAND_INSERT_BLANK2")
+            insert_len  = dlen + 2
+            insert_byte = 0x20   # char: <space>
+        elseif command == SAS_RLE_COMMAND_INSERT_ZERO2
+            # logdebug("  SAS_RLE_COMMAND_INSERT_ZERO2")
+            insert_len  = dlen + 2
+            insert_byte = 0x00   # char: @
+        end
+        if copy_len > 0
+            # logdebug("  ipos=$ipos rpos=$rpos copy_len=$copy_len => output[$rpos:$(rpos+copy_len-1)] = input[$ipos:$(ipos+copy_len-1)]")
+            for i in 0:copy_len-1
+                output[rpos + i] = input[ipos + i]
+                #output[rpos:rpos+copy_len-1] = input[ipos:ipos+copy_len-1]
             end
-        elseif control_byte == 0xD0
-            nbytes = end_of_first_byte + 2
-            for i in 1:nbytes
-                result[rpos] = 0x40
-                rpos += 1
+            rpos += copy_len
+            ipos += copy_len
+        end
+        if insert_len > 0
+            # logdebug("  ipos=$ipos rpos=$rpos insert_len=$insert_len insert_byte=0x$(hex(insert_byte))")
+            for i in 0:insert_len-1
+                output[rpos + i] = insert_byte
+                #output[rpos:rpos+insert_len-1] = insert_byte
             end
-        elseif control_byte == 0xE0
-            nbytes = end_of_first_byte + 2
-            for i in 1:nbytes
-                result[rpos] = 0x20
-                rpos += 1
-            end
-        elseif control_byte == 0xF0
-            nbytes = end_of_first_byte + 2
-            for i in 1:nbytes
-                result[rpos] = 0x00
-                rpos += 1
-            end
-        else
-            throw(FileFormatError("unknown control byte: $control_byte"))
+            rpos += insert_len
         end
     end
-
-    if length(result) != result_length
-        throw(FileFormatError("RLE: $(length(result)) != $result_length"))
-    end
-
-    return result
+    output
 end
-
 
 # rdc_decompress decompresses data using the Ross Data Compression algorithm:
 #
@@ -1479,11 +1526,11 @@ end
 @inline println1(handler::Handler, msg::String) = handler.config.verbose_level >= 1 && println(msg)
 @inline println2(handler::Handler, msg::String) = handler.config.verbose_level >= 2 && println(msg)
 @inline println3(handler::Handler, msg::String) = handler.config.verbose_level >= 3 && println(msg)
-@inline println4(handler::Handler, msg::String) = handler.config.verbose_level >= 4 && println(msg)
+logdebug = println
 
 # string representation of the SubHeaderPointer structure
 function tostring(x::SubHeaderPointer) 
-  "<SubHeaderPointer: offset=$(x.offset), length=$(x.length), compression=$(x.compression), type=$(x.ptype)>"
+  "<SubHeaderPointer: offset=$(x.offset), length=$(x.length), compression=$(x.compression), type=$(x.shtype)>"
 end
 
 # Return the current position in various aspects (file, page, chunk)

@@ -137,4 +137,6 @@ I chose to copy the code from Pandas and made minimal changes so I can have a wo
 
 ## Credits
 
-Many thanks to Jared Hobbs, the original author of the SAS I/O code from Python Pandas.  See LICENSE_SAS7BDAT.md for license details.
+Many thanks to
+- Jared Hobbs, the author of the SAS reader code from Python Pandas.  See LICENSE_SAS7BDAT.md.
+- Evan Miller, the author of ReadStat C/C++ library.  See LICENSE_READSTAT.md.
