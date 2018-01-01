@@ -337,14 +337,14 @@ function _get_properties(handler)
     else
         handler.file_endianness = :BigEndian
     end
-    # println("file_endianness = $(handler.file_endianness)")
+    println2(handler, "file_endianness = $(handler.file_endianness)")
     
     # Detect system-endianness and determine if byte swap will be required
     handler.sys_endianness = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
-    # println2(handler, "system endianess = $(handler.sys_endianness)")
+    println2(handler, "system endianess = $(handler.sys_endianness)")
 
     handler.byte_swap = handler.sys_endianness != handler.file_endianness
-    # println2(handler, "byte_swap = $(handler.byte_swap)")
+    println2(handler, "byte_swap = $(handler.byte_swap)")
         
     # Get encoding information
     buf = _read_bytes(handler, encoding_offset, 1)[1]
@@ -1062,7 +1062,8 @@ function _chunk_to_dataframe(handler)
                 # println("  bytes=$bytes")
             #end
             #values = convertfloat64a(bytes, handler.byte_swap)
-            values = convertfloat64b(bytes, handler.file_endianness)
+            #values = convertfloat64b(bytes, handler.file_endianness)
+            values = convertfloat64c(bytes, handler.file_endianness)
             #println(length(bytes))
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
