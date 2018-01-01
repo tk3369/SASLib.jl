@@ -24,8 +24,6 @@ struct ReaderConfig
     encoding::AbstractString
     chunksize::Int64
     convert_dates::Bool
-    convert_text::Bool
-    convert_header_text::Bool
     include_columns::Vector
     exclude_columns::Vector
     verbose_level::Int64
@@ -114,10 +112,9 @@ mutable struct Handler
     string_chunk::Dict{Symbol, Vector{Union{Missing, AbstractString}}}
     current_row_in_chunk_index::Int64
 
-    current_page::Int64
-    
-    # vendor
+    current_page::Int64    
     vendor::UInt8
+    use_base_transcoder::Bool
     
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
@@ -131,7 +128,7 @@ function _open(config::ReaderConfig)
     handler.column_names_strings = []
     handler.column_names = []
     handler.column_symbols = []
-    handler.columns = []
+    # handler.columns = []
     handler.column_formats = []
     handler.current_page_data_subheader_pointers = []
     handler.current_row_in_file_index = 0
@@ -145,8 +142,8 @@ end
 
 """
 open(filename::AbstractString; 
-        encoding::AbstractString = default_encoding,
-        convert_dates::Bool = default_convert_dates,
+        encoding::AbstractString = "",
+        convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         verbose_level::Int64 = 1)
@@ -155,13 +152,13 @@ Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used i
 the subsequent `SASLib.read` and `SASLib.close` functions.
 """
 function open(filename::AbstractString; 
-        encoding::AbstractString = default_encoding,
-        convert_dates::Bool = default_convert_dates,
+        encoding::AbstractString = "",
+        convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         verbose_level::Int64 = 1)
-    return _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
-        default_convert_header_text, include_columns, exclude_columns, verbose_level))
+    return _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, 
+        include_columns, exclude_columns, verbose_level))
 end
 
 """
@@ -172,7 +169,11 @@ read the entire file content.  When called again, fetch the next `nrows` rows.
 """
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
-    return read_chunk(handler, nrows)
+    tic()
+    result = read_chunk(handler, nrows)
+    elapsed = round(toq(), 5)
+    println1(handler, "Read $(handler.config.filename) with size $(result[:nrows]) x $(result[:ncols]) in $elapsed seconds")
+    return result
 end
 
 """
@@ -192,7 +193,7 @@ end
 
 """
 readsas(filename::AbstractString; 
-        encoding::AbstractString = "UTF-8",
+        encoding::AbstractString = "",
         convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
@@ -200,8 +201,10 @@ readsas(filename::AbstractString;
 
 Read a SAS7BDAT file.  
 
-The `encoding` argument may be used if string data does not have UTF-8 
-encoding.  
+`Encoding` may be used as an override only if the file cannot be read
+using the encoding specified in the file.  If you receive a warning
+about unknown encoding then check your system's supported encodings from
+the iconv library e.g. using the `iconv --list` command.
 
 If `convert_dates == false` then no conversion is made
 and you will get the number of days for Date columns (or number of 
@@ -217,22 +220,16 @@ Verbose level 0 will output nothing to the console, essentially a total quiet
 option.
 """
 function readsas(filename::AbstractString; 
-        encoding::AbstractString = default_encoding,
-        convert_dates::Bool = default_convert_dates,
+        encoding::AbstractString = "",
+        convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         verbose_level::Int64 = 1)
     handler = nothing
     try
-        handler = _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, default_convert_text,
-            default_convert_header_text, include_columns, exclude_columns, verbose_level))
-        # println(push!(history, handler))
-        t1 = time()
-        result = read(handler)
-        t2 = time()
-        elapsed = round(t2 - t1, 3)
-        println1(handler, "Read data set of size $(result[:nrows]) x $(result[:ncols]) in $elapsed seconds")
-        return result
+        handler = _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, 
+            include_columns, exclude_columns, verbose_level))
+        return read(handler)
     finally
         (handler != nothing) && close(handler)
     end
@@ -317,6 +314,7 @@ function _get_properties(handler)
         handler.page_bit_offset = page_bit_offset_x86
         handler.subheader_pointer_length = subheader_pointer_length_x86
     end
+    # println2(handler, "U64 = $(handler.U64)")
     buf = _read_bytes(handler, align_2_offset, align_2_length)
     if buf == align_1_checker_value
         align1 = align_2_value
@@ -343,46 +341,49 @@ function _get_properties(handler)
     
     # Detect system-endianness and determine if byte swap will be required
     handler.sys_endianness = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
-    # println("system endianess = $(handler.sys_endianness)")
+    # println2(handler, "system endianess = $(handler.sys_endianness)")
 
     handler.byte_swap = handler.sys_endianness != handler.file_endianness
-    # println("byte_swap = $(handler.byte_swap)")
+    # println2(handler, "byte_swap = $(handler.byte_swap)")
         
     # Get encoding information
-    buf = _read_bytes(handler, encoding_offset, encoding_length)[1]
+    buf = _read_bytes(handler, encoding_offset, 1)[1]
     if haskey(encoding_names, buf)
         handler.file_encoding = "$(encoding_names[buf])"
     else
-        handler.file_encoding = "unknown (code=$buf)" 
+        handler.file_encoding = FALLBACK_ENCODING         # hope for the best
+        handler.config.verbose_level > 0 &&  
+            warn("Unknown file encoding value ($buf), defaulting to $(handler.file_encoding)")
     end
-    # println("file_encoding = $(handler.file_encoding)")
+    #println2(handler, "file_encoding = $(handler.file_encoding)")
+
+    # User override for encoding
+    if handler.config.encoding != ""
+        handler.config.verbose_level > 0 && 
+            warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
+        handler.file_encoding = handler.config.encoding
+    end
+
+    # remember if Base.transcode should be used
+    handler.use_base_transcoder = uppercase(handler.file_encoding) in
+        ENCODINGS_OK_WITH_BASE_TRANSCODER
 
     # Get platform information
     buf = _read_bytes(handler, platform_offset, platform_length)
     if buf == b"1"
-        handler.platform = "unix"
+        handler.platform = "Unix"
     elseif buf == b"2"
-        handler.platform = "windows"
+        handler.platform = "Windows"
     else
-        handler.platform = "unknown"
+        handler.platform = "Unknown"
     end
     # println("platform = $(handler.platform)")
 
     buf = _read_bytes(handler, dataset_offset, dataset_length)
-    handler.name = transcode(handler, brstrip(buf, zero_space))
-    # if handler.config.convert_header_text
-    #     # println("before decode: name = $(handler.name)")
-    #     handler.name = decode(handler.name, handler.config.encoding)
-    #     # println("after decode:  name = $(handler.name)")
-    # end
+    handler.name = transcode_metadata(brstrip(buf, zero_space))
 
     buf = _read_bytes(handler, file_type_offset, file_type_length)
-    handler.file_type = transcode(handler, brstrip(buf, zero_space))
-    # if handler.config.convert_header_text
-    #     # println("before decode: file_type = $(handler.file_type)")
-    #     handler.file_type = decode(handler.file_type, handler.config.encoding)
-    #     # println("after decode:  file_type = $(handler.file_type)")
-    # end
+    handler.file_type = transcode_metadata(brstrip(buf, zero_space))
 
     # Timestamp is epoch 01/01/1960
     const epoch = DateTime(1960, 1, 1, 0, 0, 0)
@@ -397,7 +398,7 @@ function _get_properties(handler)
     handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
 
     # Read the rest of the header into cached_page.
-    println2(handler, "  Reading rest of page, header_length=$(handler.header_length) willread=$(handler.header_length - 288)")
+    println3(handler, "Reading rest of page, header_length=$(handler.header_length) willread=$(handler.header_length - 288)")
     buf = Base.read(handler.io, handler.header_length - 288)
     append!(handler.cached_page, buf)
     if length(handler.cached_page) != handler.header_length
@@ -418,10 +419,7 @@ function _get_properties(handler)
     # println("page_count = $(handler.page_count)")
     
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
-    handler.sas_release = transcode(handler, brstrip(buf, zero_space))
-    # if handler.config.convert_header_text
-    #     handler.sas_release = transcode(handler.sas_release, handler.config.encoding)
-    # end
+    handler.sas_release = transcode_metadata(brstrip(buf, zero_space))
     println2(handler, "SAS Release = $(handler.sas_release)")
 
     # determine vendor - either SAS or STAT_TRANSFER
@@ -429,29 +427,20 @@ function _get_properties(handler)
     println2(handler, "Vendor = $(handler.vendor)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
-    handler.server_type = transcode(handler, brstrip(buf, zero_space))
-    # if handler.config.convert_header_text
-    #     handler.server_type = decode(handler.server_type, handler.config.encoding)
-    # end
+    handler.server_type = transcode_metadata(brstrip(buf, zero_space))
     # println("server_type = $(handler.server_type)")
 
     buf = _read_bytes(handler, os_version_number_offset + total_align, os_version_number_length)
-    handler.os_version = transcode(handler, brstrip(buf, zero_space))
-    # if handler.config.convert_header_text
-    #     handler.os_version = decode(handler.os_version, handler.config.encoding)
-    # end
+    handler.os_version = transcode_metadata(brstrip(buf, zero_space))
     # println2(handler, "os_version = $(handler.os_version)")
     
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
     buf = brstrip(buf, zero_space)
     if length(buf) > 0
-        handler.os_name = transcode(handler, buf)
+        handler.os_name = transcode_metadata(buf)
     else
         buf = _read_bytes(handler, os_maker_offset + total_align, os_maker_length)
-        handler.os_name = transcode(handler, brstrip(buf, zero_space))
-        # if handler.config.convert_header_text
-        #     handler.os_name = decode(handler.os_name, handler.config.encoding)
-        # end
+        handler.os_name = transcode_metadata(brstrip(buf, zero_space))
     end
     # println("os_name = $(handler.os_name)")
 end
@@ -699,12 +688,7 @@ function _process_columntext_subheader(handler, offset, length)
     println3(handler, "  cname_raw=$cname_raw")
 
     cname = cname_raw
-    println3(handler, "  decoded=$(transcode(handler, cname))")
-    # TK: do not decode at this time.... do it after extracting by column
-    # if handler.config.convert_header_text
-    #     cname = decode(cname, handler.config.encoding)
-    # end
-    # println("  cname=$cname")
+    println3(handler, "  decoded=$(transcode_metadata(cname))")
     push!(handler.column_names_strings, cname)
 
     #println3(handler, "  handler.column_names_strings=$(handler.column_names_strings)")
@@ -749,7 +733,7 @@ function _process_columntext_subheader(handler, offset, length)
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
             creator_proc = buf[1:handler.lcp]
-            println3(handler, "  uncompressed: creator proc=$creator_proc decoded=$(transcode(handler, creator_proc))")
+            println3(handler, "  uncompressed: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
         elseif compression_method == compression_method_rle
             offset1 = offset + 40
             if handler.U64
@@ -757,7 +741,7 @@ function _process_columntext_subheader(handler, offset, length)
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
             creator_proc = buf[1:handler.lcp]
-            println3(handler, "  RLE compression: creator proc=$creator_proc decoded=$(transcode(handler, creator_proc))")
+            println3(handler, "  RLE compression: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
         elseif handler.lcs > 0
             handler.lcp = 0
             offset1 = offset + 16
@@ -766,17 +750,10 @@ function _process_columntext_subheader(handler, offset, length)
             end
             buf = _read_bytes(handler, offset1, handler.lcs)
             creator_proc = buf[1:handler.lcp]
-            println3(handler, "  LCS>0: creator proc=$creator_proc decoded=$(transcode(handler, creator_proc))")
-        # else
-        #     creator_proc = nothing
+            println3(handler, "  LCS>0: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
+        else
+            creator_proc = nothing
         end
-        # handler.creator_proc = 
-        #     creator_proc != nothing ? transcode(handler, creator_proc) : nothing
-        # if handler.config.convert_header_text
-        #     if handler.creator_proc != nothing
-        #         handler.creator_proc = decode(handler.creator_proc, handler.config.encoding)
-        #     end
-        # end
     end
 end
         
@@ -814,10 +791,8 @@ function _process_columnname_subheader(handler, offset, length)
         name_str = handler.column_names_strings[idx+1]
         # println(" i=$i name_str=$name_str")
         
-        name = transcode(handler, name_str[col_offset+1:col_offset + col_len])
-        # if handler.config.convert_header_text
-        #     name = decode(name, handler.config.encoding)
-        # end
+        name = transcode_metadata(name_str[col_offset+1:col_offset + col_len])
+
         push!(handler.column_names, name)
         push!(handler.column_symbols, Symbol(name))
         println3(handler, " i=$i name=$name")
@@ -862,67 +837,53 @@ function _process_columnlist_subheader(handler, offset, length)
 end
 
 function _process_format_subheader(handler, offset, length)
-    # println("IN: _process_format_subheader")
+    println3(handler, "IN: _process_format_subheader")
     int_len = handler.int_length
-    text_subheader_format = (
-        offset +
-        column_format_text_subheader_index_offset +
-        3 * int_len)
-    col_format_offset = (offset +
-                        column_format_offset_offset +
-                        3 * int_len)
-    col_format_len = (offset +
-                    column_format_length_offset +
-                    3 * int_len)
-    text_subheader_label = (
-        offset +
-        column_label_text_subheader_index_offset +
-        3 * int_len)
-    col_label_offset = (offset +
-                        column_label_offset_offset +
-                        3 * int_len)
-    col_label_len = offset + column_label_length_offset + 3 * int_len
+    col_format_idx        = offset + 22 + 3 * int_len
+    col_format_offset     = offset + 24 + 3 * int_len
+    col_format_len        = offset + 26 + 3 * int_len
+    col_label_idx         = offset + 28 + 3 * int_len
+    col_label_offset      = offset + 30 + 3 * int_len
+    col_label_len         = offset + 32 + 3 * int_len
 
-    x = _read_int(handler, text_subheader_format,
-                    column_format_text_subheader_index_length)
+    format_idx = _read_int(handler, col_format_idx, 2)
+    println3(handler, "  format_idx=$format_idx")
     # TODO julia bug?  must reference Base.length explicitly or else we get MethodError: objects of type Int64 are not callable
-    format_idx = min(x, Base.length(handler.column_names_strings) - 1)
-
-    format_start = _read_int(handler, 
-        col_format_offset, column_format_offset_length)
-    format_len = _read_int(handler, 
-        col_format_len, column_format_length_length)
-
-    label_idx = _read_int(handler, 
-        text_subheader_label,
-        column_label_text_subheader_index_length)
-    # TODO julia bug?  must reference Base.length explicitly or else we get MethodError: objects of type Int64 are not callable
-    label_idx = min(label_idx, Base.length(handler.column_names_strings) - 1)
-
-    label_start = _read_int(handler, 
-        col_label_offset, column_label_offset_length)
-    label_len = _read_int(handler, col_label_len,
-                            column_label_length_length)
-
-    label_names = handler.column_names_strings[label_idx+1]
-    column_label = label_names[label_start+1: label_start + label_len]
+    format_idx = min(format_idx, Base.length(handler.column_names_strings) - 1)
+    format_start = _read_int(handler, col_format_offset, 2)
+    format_len = _read_int(handler, col_format_len, 2)
+    println3(handler, "  format_idx=$format_idx, format_start=$format_start, format_len=$format_len")
     format_names = handler.column_names_strings[format_idx+1]
-    column_format = transcode(handler, format_names[format_start+1: format_start + format_len])
-    # if handler.config.convert_header_text
-    #     column_format = decode(column_format, handler.config.encoding)
-    # end
-    current_column_number = size(handler.columns, 2) + 1
-
-    col = Column(
-        current_column_number,
-        handler.column_names[current_column_number],
-        column_label,
-        column_format,
-        handler.column_types[current_column_number],
-        handler.column_data_lengths[current_column_number])
+    column_format = transcode_metadata(format_names[format_start+1: format_start + format_len])
 
     push!(handler.column_formats, column_format)
-    push!(handler.columns, col)
+
+    # The following code isn't used and it's not working for some files e.g. topical.sas7bdat from AHS
+
+    # label_idx = _read_int(handler, col_label_idx, 2)
+    # # TODO julia bug?  must reference Base.length explicitly or else we get MethodError: objects of type Int64 are not callable
+    # label_idx = min(label_idx, Base.length(handler.column_names_strings) - 1)
+    # label_start = _read_int(handler, col_label_offset, 2)
+    # label_len = _read_int(handler, col_label_len, 2)
+    # println3(handler, "  label_idx=$label_idx, label_start=$label_start, label_len=$label_len")
+
+    # println3(handler, "  handler.column_names_strings=$(size(handler.column_names_strings[1], 1))")
+    # label_names = handler.column_names_strings[label_idx+1]
+    # column_label = label_names[label_start+1: label_start + label_len]
+    # println3(handler, "  column_label=$column_label decoded=$(transcode_metadata(column_label))")
+
+    # current_column_number = size(handler.columns, 2) 
+    # println3(handler, "  current_column_number=$current_column_number")
+
+    # col = Column(
+    #     current_column_number,
+    #     handler.column_names[current_column_number],
+    #     column_label,
+    #     column_format,
+    #     handler.column_types[current_column_number],
+    #     handler.column_data_lengths[current_column_number])
+
+    # push!(handler.columns, col)
 end
 
 function read_chunk(handler, nrows=0)
@@ -989,10 +950,10 @@ function read_chunk(handler, nrows=0)
     rslt = _chunk_to_dataframe(handler)
     perf_chunk_to_data_frame = toq()
 
-    # construct column symbols/names from actual results since we may have
-    # read fewer columns than what's in the file
-    column_symbols = [col for col in keys(rslt)]
-    column_names = String.(column_symbols)
+    # here column symbols contains only ones for columns that are actually read
+    column_symbols = [sym for (k, sym, ty) in handler.column_indices]
+    column_names   = String.(column_symbols)
+    column_types   = [eltype(typeof(rslt[sym])) for (k, sym, ty) in handler.column_indices]
 
     return Dict(
         :data => rslt, 
@@ -1006,7 +967,7 @@ function read_chunk(handler, nrows=0)
         :system_endianness => handler.sys_endianness,
         :column_offsets => handler.column_data_offsets,
         :column_lengths => handler.column_data_lengths,
-        :column_types => eltype.([typeof(rslt[col]) for col in keys(rslt)]),
+        :column_types => column_types,
         :column_symbols => column_symbols,
         :column_names => column_names,
         :perf_read_data => perf_read_data,
@@ -1262,7 +1223,6 @@ function process_byte_array_with_data(handler, offset, length, compression)
     # source = np.frombuffer(
     #     handler.cached_page[offset:offset + length], dtype=np.uint8)
     source = handler.cached_page[offset+1:offset+length]
-    source2= handler.cached_page[offset+1-4:offset+length-4]
 
     # TODO decompression 
     # if handler.decompress != NULL and (length < handler.row_length)
@@ -1310,7 +1270,6 @@ function process_byte_array_with_data(handler, offset, length, compression)
             #     println3(handler, "  k=$k name=$name ty=$ty")
             #     println3(handler, "  s=$s m=$m lngt=$lngt start=$start")
             #     println3(handler, "  source =$(source[start+1:start+lngt])")
-            #     println3(handler, "  source2=$(source2[start+1:start+lngt])")
             # end
             dst = handler.byte_chunk[name]
             for k in 1:lngt
@@ -1320,7 +1279,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
             #println3(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
             @inbounds handler.string_chunk[name][current_row+1] = 
-                rstrip(transcode(handler, source[start+1:(start+lngt)]))
+                rstrip(transcode_data(handler, source[start+1:(start+lngt)]))
         end
     end
 
@@ -1329,14 +1288,17 @@ function process_byte_array_with_data(handler, offset, length, compression)
     handler.current_row_in_file_index += 1
 end
 
-# custom transcode function
-@inline function transcode(handler::Handler, bytes::Vector{UInt8})
-    if handler.config.encoding != "UTF-8"
-        decode(bytes, handler.config.encoding)
-    else
-        Base.transcode(String, bytes)
-    end
-end
+# Custom transcode function
+# Base.transcode is a must faster function than iconv's decode so use that 
+# whenever possible
+transcode_data(handler::Handler, bytes::Vector{UInt8}) = 
+    handler.use_base_transcoder ? 
+        Base.transcode(String, bytes) : 
+        decode(bytes, handler.file_encoding)
+
+# metadata is always ASCII-based (I think)
+transcode_metadata(bytes::Vector{UInt8}) = 
+    Base.transcode(String, bytes)
 
 # Courtesy of ReadStat project
 # https://github.com/WizardMac/ReadStat

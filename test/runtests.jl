@@ -10,7 +10,7 @@ using Base.Test
         @test SASLib.close(handler) == nothing
     end
 
-    @testset "read data" begin
+    @testset "read basic test files (test*.sas7bdat)" begin
         files = filter(x -> endswith(x, "sas7bdat") && startswith(x, "test"), 
             Base.Filesystem.readdir())
         for f in files
@@ -105,6 +105,32 @@ using Base.Test
         @test sum(df[:vlong][1:2])   == 9
         @test sum(df[:vfloat][1:2])  ≈  10.14000010
         @test sum(df[:vdouble][1:2]) ≈  10.14000000
+    end
+
+    # topical.sas7bdat contains columns labels which should be ignored anywas
+    @testset "topical" begin
+        fname = "topical.sas7bdat"
+        println("=== $fname ===")
+        handler = SASLib.open(fname, verbose_level = 1)
+        result = SASLib.read(handler, 1000)
+        SASLib.close(handler)
+        df = result[:data]
+		@test result[:ncols] == 114
+		@test result[:nrows] == 1000
+		@test result[:page_count] == 10
+        @test result[:page_length] == 16384
+        @test result[:system_endianness] == :LittleEndian
+        @test count(x -> x == "B", df[:DPEVVEHIC]) == 648
+        @test mean(filter(!isnan, df[:PTCOSTGAS])) ≈ 255.51543209876544
+    end
+
+    @testset "file encoding" begin
+        fname = "extr.sas7bdat"
+        println("=== $fname ===")
+        result = readsas(fname)
+        df = result[:data]
+        @test result[:file_encoding] == "CP932"
+        @test df[:AETXT][1] == "眠気"
     end
 
 	@testset "exception" begin

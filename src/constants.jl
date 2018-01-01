@@ -1,11 +1,6 @@
 # default settings
-const default_encoding = "UTF-8"
 const default_chunksize = 0
-const default_convert_dates = true
-# const default_convert_empty_string_to_missing = true
-const default_convert_text = true
-const default_convert_header_text = true
-const default_verbose_level = 1  # little verbose by default
+const default_verbose_level = 1 
 
 # interesting... using semicolons would make it into a 1-dimensional array
 const magic = [
@@ -91,18 +86,6 @@ const column_data_length_offset = 8
 const column_data_length_length = 4
 const column_type_offset = 14
 const column_type_length = 1
-const column_format_text_subheader_index_offset = 22
-const column_format_text_subheader_index_length = 2
-const column_format_offset_offset = 24
-const column_format_offset_length = 2
-const column_format_length_offset = 26
-const column_format_length_length = 2
-const column_label_text_subheader_index_offset = 28
-const column_label_text_subheader_index_length = 2
-const column_label_offset_offset = 30
-const column_label_offset_length = 2
-const column_label_length_offset = 32
-const column_label_length_length = 2
 const sas_date_origin = Date(1960, 1, 1)
 const sas_datetime_origin = DateTime(sas_date_origin)
  
@@ -226,3 +209,6 @@ const column_type_string  = 0x02
 
 const VENDOR_STAT_TRANSFER = 0x00
 const VENDOR_SAS           = 0x01
+
+const FALLBACK_ENCODING = "UTF-8"
+const ENCODINGS_OK_WITH_BASE_TRANSCODER = [ "UTF-8" , "ISO-8859-1", "WINDOWS-1252" ]
