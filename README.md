@@ -129,7 +129,7 @@ I don't have too much performance test results but initial comparison between SA
 
 ## Why another package?
 
-At first, I was just going to use ReadStat.  However, ReadStat does not support reading files with compressed binary data.  I could have chosen to contribute to that project instead but I would rather learn and code in Julia  ;-)  The implementation in Pandas is fairly straightforward, making it a relatively easy porting project.  
+At first, I was just going to use ReadStat.  However, ReadStat does not support reading files with RDC-compressed binary data.  I could have chosen to contribute to that project but I would rather learn and code in Julia instead ;-)  The implementation in Pandas is fairly straightforward, making it a relatively easy porting project.  
 
 ## Porting Notes
 

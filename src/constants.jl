@@ -1,5 +1,5 @@
 # default settings
-const default_chunksize = 0
+const default_chunk_size = 0
 const default_verbose_level = 1 
 
 # interesting... using semicolons would make it into a 1-dimensional array

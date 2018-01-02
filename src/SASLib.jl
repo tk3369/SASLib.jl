@@ -22,7 +22,7 @@ end
 struct ReaderConfig 
     filename::AbstractString
     encoding::AbstractString
-    chunksize::Int64
+    chunk_size::Int64
     convert_dates::Bool
     include_columns::Vector
     exclude_columns::Vector
@@ -157,7 +157,7 @@ function open(filename::AbstractString;
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         verbose_level::Int64 = 1)
-    return _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, 
+    return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
         include_columns, exclude_columns, verbose_level))
 end
 
@@ -227,7 +227,7 @@ function readsas(filename::AbstractString;
         verbose_level::Int64 = 1)
     handler = nothing
     try
-        handler = _open(ReaderConfig(filename, encoding, default_chunksize, convert_dates, 
+        handler = _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
             include_columns, exclude_columns, verbose_level))
         return read(handler)
     finally
@@ -890,8 +890,8 @@ function read_chunk(handler, nrows=0)
 
     # println("IN: read_chunk")
     #println(handler.config)
-    if (nrows == 0) && (handler.config.chunksize > 0)
-        nrows = handler.config.chunksize
+    if (nrows == 0) && (handler.config.chunk_size > 0)
+        nrows = handler.config.chunk_size
     elseif nrows == 0
         nrows = handler.row_count
     end
@@ -1061,9 +1061,7 @@ function _chunk_to_dataframe(handler)
             #if j == 1  && length(bytes) < 100  #debug only
                 # println("  bytes=$bytes")
             #end
-            #values = convertfloat64a(bytes, handler.byte_swap)
-            #values = convertfloat64b(bytes, handler.file_endianness)
-            values = convertfloat64c(bytes, handler.file_endianness)
+            values = convertfloat64f(bytes, handler.file_endianness)
             #println(length(bytes))
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
