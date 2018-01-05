@@ -212,3 +212,6 @@ const VENDOR_SAS           = 0x01
 
 const FALLBACK_ENCODING = "UTF-8"
 const ENCODINGS_OK_WITH_BASE_TRANSCODER = [ "UTF-8" , "ISO-8859-1", "WINDOWS-1252" ]
+
+const REGULAR_STR_ARRAY(n) = Array{String}(n)
+

@@ -4,12 +4,13 @@ module SASLib
 
 using StringEncodings, Missings
 
-export readsas
+export readsas, REGULAR_STR_ARRAY
 
 import Base.show
 
 include("constants.jl")
 include("utils.jl")
+include("ObjectPool.jl")
 
 struct FileFormatError <: Exception
     message::AbstractString
@@ -26,6 +27,7 @@ struct ReaderConfig
     convert_dates::Bool
     include_columns::Vector
     exclude_columns::Vector
+    string_array_fn::Dict{Symbol, Any}
     verbose_level::Int64
 end
 
@@ -109,7 +111,7 @@ mutable struct Handler
     # creator_proc::Union{Void, Vector{UInt8}}
 
     byte_chunk::Dict{Symbol, Vector{UInt8}}
-    string_chunk::Dict{Symbol, Vector{Union{Missing, AbstractString}}}
+    string_chunk::Dict{Symbol, AbstractArray}
     current_row_in_chunk_index::Int64
 
     current_page::Int64    
@@ -146,6 +148,7 @@ open(filename::AbstractString;
         convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
+        string_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
 
 Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
@@ -156,9 +159,10 @@ function open(filename::AbstractString;
         convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
+        string_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
     return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-        include_columns, exclude_columns, verbose_level))
+        include_columns, exclude_columns, string_array_fn, verbose_level))
 end
 
 """
@@ -197,6 +201,7 @@ readsas(filename::AbstractString;
         convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
+        string_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
 
 Read a SAS7BDAT file.  
@@ -215,6 +220,22 @@ columns, you may specify
 either `include_columns` or `exclude_columns` but not both.  They are just 
 arrays of columns indices or symbols e.g. [1, 2, 3] or [:employeeid, :firstname, :lastname]
 
+String columns by default are stored in `SASLib.ObjectPool`, which is an array-like
+structure that is more space-efficient when there is a high number of duplicate
+values.  However, if there are too many unique items (> 10%) then it's automatically 
+switched over to a regular Array.
+
+If you wish to use a different kind of array, you can pass your 
+array constructor via the `string_array_fn` dict.  The constructor must
+take a single integer argument that represents the size of the array.
+The convenient `REGULAR_STR_ARRAY` function can be used if you just want to 
+use the regular Array{String} type.
+
+For examples,
+`string_array_fn = Dict(:column1 => (n)->CategoricalArray{String}((n,)))`
+or  
+`string_array_fn = Dict(:column1 => REGULAR_STR_ARRAY)`.
+
 For debugging purpose, `verbose_level` may be set to a value higher than 1.
 Verbose level 0 will output nothing to the console, essentially a total quiet 
 option.
@@ -224,11 +245,12 @@ function readsas(filename::AbstractString;
         convert_dates::Bool = true,
         include_columns::Vector = [],
         exclude_columns::Vector = [],
+        string_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
     handler = nothing
     try
         handler = _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-            include_columns, exclude_columns, verbose_level))
+            include_columns, exclude_columns, string_array_fn, verbose_level))
         return read(handler)
     finally
         (handler != nothing) && close(handler)
@@ -931,7 +953,7 @@ function read_chunk(handler, nrows=0)
         if ty == column_type_decimal
             handler.byte_chunk[name] = fill(UInt8(0), Int64(8 * nrows)) # 8-byte values
         elseif ty == column_type_string
-            handler.string_chunk[name] = fill(missing, Int64(nrows)) 
+            handler.string_chunk[name] = createstrarray(handler, name, nrows) 
         else
             throw(FileFormatError("unknown column type: $ty for column $name"))
         end
@@ -954,6 +976,13 @@ function read_chunk(handler, nrows=0)
     column_symbols = [sym for (k, sym, ty) in handler.column_indices]
     column_names   = String.(column_symbols)
     column_types   = [eltype(typeof(rslt[sym])) for (k, sym, ty) in handler.column_indices]
+    column_info = [(
+            k, 
+            sym, 
+            ty == column_type_string ? :String : :Number, 
+            eltype(typeof(rslt[sym])),
+            typeof(rslt[sym])
+            ) for (k, sym, ty) in handler.column_indices]
 
     return Dict(
         :data => rslt, 
@@ -970,9 +999,28 @@ function read_chunk(handler, nrows=0)
         :column_types => column_types,
         :column_symbols => column_symbols,
         :column_names => column_names,
+        :column_info => column_info,
         :perf_read_data => perf_read_data,
         :perf_type_conversion => perf_chunk_to_data_frame
         )
+end
+
+const EMPTY_STRING = ""
+# not extremely efficient but is a safe way to do it
+function createstrarray(handler, column_symbol, nrows)
+    if haskey(handler.config.string_array_fn, column_symbol)
+        handler.config.string_array_fn[column_symbol](nrows)
+    else
+        if nrows <= 2 << 7 
+            ObjectPool{String, UInt8}(EMPTY_STRING, nrows)
+        elseif nrows <= 2 << 15
+            ObjectPool{String, UInt16}(EMPTY_STRING, nrows)
+        elseif nrows <= 2 << 31
+            ObjectPool{String, UInt32}(EMPTY_STRING, nrows)
+        else
+            ObjectPool{String, UInt64}(EMPTY_STRING, nrows)
+        end
+    end
 end
 
 function nullresult(filename)
@@ -1277,7 +1325,18 @@ function process_byte_array_with_data(handler, offset, length, compression)
             # @inbounds handler.byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
             #println3(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
-            @inbounds handler.string_chunk[name][current_row+1] = 
+            # issue 12 - heuristic for switching to regular Array type
+            ar = handler.string_chunk[name]
+            if isa(ar, ObjectPool) &&
+                    handler.row_count > 10000 &&
+                    handler.current_row_in_file_index > 1 &&
+                    handler.current_row_in_file_index % 200 == 0 &&
+                    ar.uniqueitemscount / ar.itemscount > 0.05
+                println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
+                ar = Array(ar)
+                handler.string_chunk[name] = ar
+            end
+            @inbounds ar[current_row+1] = 
                 rstrip(transcode_data(handler, source[start+1:(start+lngt)]))
         end
     end
@@ -1562,5 +1621,17 @@ function _determine_vendor(handler::Handler)
         handler.vendor = VENDOR_SAS
     end
 end
+
+function Base.show(io::IO, h::Handler)
+    println(io, "SASLib.Handler:")
+    println(io, "  filename:    $(h.config.filename)")
+    println(io, "  encoding:    $(h.file_encoding)")
+    println(io, "  platform:    $(h.sas_release) (", h.U64 ? "64" : "32", "-bit)")
+    println(io, "  endianness:  $(h.file_endianness)")
+    println(io, "  page size:   $(h.page_length)")
+    println(io, "  pages:       $(h.page_count)")
+    println(io, "  rows:        $(h.row_count)")
+end
+
 
 end # module

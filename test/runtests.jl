@@ -3,13 +3,49 @@ using Base.Test
 
 function getpath(dir, file) 
     path = "$dir/$file"
-    println("================ $path ================")
+    #println("================ $path ================")
     path
 end
 readfile(dir, file)  = readsas(getpath(dir, file))
 openfile(dir, file)  = SASLib.open(getpath(dir, file))
 
 @testset "SASLib" begin
+
+    @testset "object pool" begin
+        println("Testing object pool...")
+
+        # string pool
+        default = ""
+        x = SASLib.ObjectPool{String, UInt8}(default, 5)
+        @test length(x) == 5
+        @test size(x) == (5, )
+        @test endof(x) == 5
+        @test count(v -> v == default, x) == 5
+        @test count(v -> v === default, x) == 5
+        @test map(v -> "x$v", x) == [ "x", "x", "x", "x", "x" ]
+        x[1] = "abc"
+        @test x[1] == "abc"
+        @test x.uniqueitemscount == 2
+        x[2] = "abc"
+        @test x[2] == "abc"
+        @test x.uniqueitemscount == 2
+        x[3] = "xyz"
+        @test x.uniqueitemscount == 3
+        @test x.itemscount == 5
+        @test_throws BoundsError x[6] == ""
+
+        # tuple pool
+        y = SASLib.ObjectPool{Tuple, UInt8}((1,1,1), 100)
+        y[1:100] = [(v, v, v) for v in 1:100]
+        @test y[1] == (1,1,1)
+        @test y[2] == (2,2,2)
+        @test y[100] == (100,100,100)
+        @test y.uniqueitemscount == 100   # first one is the same as the default
+
+        # more error conditions
+        z = SASLib.ObjectPool{Int, UInt8}(0, 1000)
+        @test_throws BoundsError z[1:300] = 1:300
+    end
 
     @testset "open and close" begin
         handler = openfile("data_pandas", "test1.sas7bdat")
@@ -123,18 +159,6 @@ openfile(dir, file)  = SASLib.open(getpath(dir, file))
         @test df[:AETXT][1] == "眠気"
     end
 
-    @testset "just reads" begin
-        for dir in ["data_pandas", "data_reikoch", "data_AHS2013", "data_misc"]
-            for f in readdir(dir)
-                if endswith(f, ".sas7bdat") && 
-                        !(f in ["zero_variables.sas7bdat"])
-                    result = readfile(dir, f)
-                    @test result[:nrows] > 0
-                end
-            end
-        end
-    end
-
     @testset "handler object" begin
         handler = openfile("data_reikoch", "binary.sas7bdat")
         @test handler.U64 == true
@@ -154,6 +178,28 @@ openfile(dir, file)  = SASLib.open(getpath(dir, file))
         @test handler.config.include_columns == []
         @test handler.config.exclude_columns == []
         @test handler.config.encoding == ""
+    end
+
+    @testset "array constructors" begin
+        
+        result = readsas("data_AHS2013/homimp.sas7bdat")
+        @test typeof(result[:data][:RAS]) == SASLib.ObjectPool{String,UInt16}
+
+        result = readsas("data_AHS2013/homimp.sas7bdat", 
+            string_array_fn = Dict(:RAS => REGULAR_STR_ARRAY))
+        @test typeof(result[:data][:RAS]) == Array{String,1}
+    end
+
+    @testset "just reads" begin
+        for dir in ["data_pandas", "data_reikoch", "data_AHS2013", "data_misc"]
+            for f in readdir(dir)
+                if endswith(f, ".sas7bdat") && 
+                        !(f in ["zero_variables.sas7bdat"])
+                    result = readfile(dir, f)
+                    @test result[:nrows] > 0
+                end
+            end
+        end
     end
 
 	@testset "exception" begin
