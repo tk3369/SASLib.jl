@@ -1332,7 +1332,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
                     handler.current_row_in_file_index > 1 &&
                     handler.current_row_in_file_index % 200 == 0 &&
                     ar.uniqueitemscount / ar.itemscount > 0.05
-                println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
+                println1(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
                 ar = Array(ar)
                 handler.string_chunk[name] = ar
             end
