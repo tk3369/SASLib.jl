@@ -7,6 +7,8 @@ This project started out as a port of Pandas' read_sas function.  Since the firs
 
 Only `sas7bdat` format is supported, however.  If anyone needs to read `xport` files, please submit an issue.  Pull requests are welcome as well.
 
+SASLib is licensed under the MIT Expat license.
+
 ## Installation
 
 ```
