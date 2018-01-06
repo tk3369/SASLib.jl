@@ -944,8 +944,8 @@ function read_chunk(handler, nrows=0)
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
 
-    ns > 0 && !handler.use_base_transcoder && 
-        info("Note: encoding incompatible with UTF-8, reader will take more time")
+    # ns > 0 && !handler.use_base_transcoder && 
+    #     info("Note: encoding incompatible with UTF-8, reader will take more time")
 
     _fill_column_indices(handler)
 
@@ -1337,7 +1337,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
                     handler.current_row_in_file_index % 200 == 0 &&
                     isa(ar, ObjectPool) &&
                     ar.uniqueitemscount / ar.itemscount > 0.05
-                println1(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
+                println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
                 ar = Array(ar)
                 handler.string_chunk[name] = ar
             end
@@ -1355,13 +1355,22 @@ end
 # Base.transcode is a must faster function than iconv's decode so use that 
 # whenever possible
 @inline transcode_data(handler::Handler, bytes::Vector{UInt8}) = 
-    handler.use_base_transcoder ? 
-        Base.transcode(String, bytes) : 
-        decode(bytes, handler.file_encoding)
+    handler.use_base_transcoder || seven_bit_data(bytes) ? 
+        String(bytes) : decode(bytes, handler.file_encoding)
 
 # metadata is always ASCII-based (I think)
 @inline transcode_metadata(bytes::Vector{UInt8}) = 
     Base.transcode(String, bytes)
+
+# determine if string data contains only 7-bit characters
+@inline function seven_bit_data(bytes)
+    for i in 1:length(bytes)
+        if bytes[i] > 0x7f
+            return false
+        end
+    end
+    true
+end
 
 # Courtesy of ReadStat project
 # https://github.com/WizardMac/ReadStat
