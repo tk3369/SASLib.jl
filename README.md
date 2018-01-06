@@ -223,7 +223,7 @@ I chose to copy the code from Pandas and made minimal changes so I can have a wo
 ## Credits
 
 - Jared Hobbs, the author of the SAS reader code from Python Pandas.  See LICENSE_SAS7BDAT.md.
-- Evan Miller, the author of ReadStat C/C++ library.  See LICENSE_READSTAT.md.
+- [Evan Miller](https://github.com/evanmiller), the author of ReadStat C/C++ library.  See LICENSE_READSTAT.md.
 - [David Anthoff](https://github.com/davidanthoff), who provide many valuable ideas at the early stage of development.
 
 I also want to thank all the active members at the [Julia Discourse community] (https://discourse.julialang.org).  This project wouldn't be possible without all the help I got from the community.  That's the beauty of open-source development.
