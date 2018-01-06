@@ -1333,10 +1333,10 @@ function process_byte_array_with_data(handler, offset, length, compression)
         elseif ct == column_type_string
             # issue 12 - heuristic for switching to regular Array type
             ar = handler.string_chunk[name]
-            if  handler.current_row_in_file_index > 10000 &&
+            if  handler.current_row_in_file_index > 2000 &&
                     handler.current_row_in_file_index % 200 == 0 &&
                     isa(ar, ObjectPool) &&
-                    ar.uniqueitemscount / ar.itemscount > 0.05
+                    ar.uniqueitemscount / ar.itemscount > 0.10
                 println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
                 ar = Array(ar)
                 handler.string_chunk[name] = ar

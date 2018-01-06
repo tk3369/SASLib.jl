@@ -149,11 +149,11 @@ SASLib.close(handler)              # remember to close the handler when done
 
 ### String Columns
 
-By default, string columns are read into an `AbstractArray` structure called ObjectPool in order to conserve memory space that might be wasted for duplicate string values.  The library tries to be smart - when it encounters too many unique values (>10%) in a large array (> 10,000 rows), it falls back to a regular Julia array.
+By default, string columns are read into an `AbstractArray` structure called ObjectPool in order to conserve memory space that might otherwise be wasted for duplicate string values.  The library tries to be smart - when it encounters too many unique values (> 10%) in a large array (> 2000 rows), it falls back to a regular Julia array.
 
-You can use a different array type for any columns as you wish by specifying a `string_array_fn` parameter when reading the file.  It has to be a Dict that maps a column symbol into a function that takes an integer argument and returns any array of that size.
+You can use a different array type (e.g. [CategoricalArray](https://github.com/JuliaData/CategoricalArrays.jl) or [PooledArray](https://github.com/JuliaComputing/PooledArrays.jl)) for any columns as you wish by specifying a `string_array_fn` parameter when reading the file.  It has to be a Dict that maps a column symbol into a function that takes an integer argument and returns any array of that size.
 
-Example:
+For example, the anonymous function below returns a regular Julia array:
 
 ```
 julia> x = readsas("productsales.sas7bdat", include_columns=[:COUNTRY, :REGION]);
@@ -173,10 +173,11 @@ julia> typeof.(collect(values(x[:data])))
  SASLib.ObjectPool{String,UInt16}
 ```
 
-For convenience, `SASLib.REGULAR_STR_ARRAY` may be used.  Also, if you need all columns to be configured then the key of the `string_array_fn` dict may be just the symbol `:_all_`. 
+For convenience, `SASLib.REGULAR_STR_ARRAY` may be used for utilizing a regular Julia array.  Also, if you need all columns to be configured then the key of the `string_array_fn` dict may be just the symbol `:_all_`. 
 
 ```
-julia> x = readsas("productsales.sas7bdat", include_columns=[:COUNTRY, :REGION], string_array_fn=Dict(:_all_ => REGULAR_STR_ARRAY));
+julia> x = readsas("productsales.sas7bdat", include_columns=[:COUNTRY, :REGION],
+                   string_array_fn=Dict(:_all_ => REGULAR_STR_ARRAY));
 Read productsales.sas7bdat with size 1440 x 2 in 0.01005 seconds
 
 julia> typeof.(collect(values(x[:data])))
@@ -184,7 +185,6 @@ julia> typeof.(collect(values(x[:data])))
  Array{String,1}
  Array{String,1}
 ```
-
 
 ## Why another package?
 
@@ -196,8 +196,8 @@ I chose to copy the code from Pandas and made minimal changes so I can have a wo
 
 ## Credits
 
-Many thanks to
 - Jared Hobbs, the author of the SAS reader code from Python Pandas.  See LICENSE_SAS7BDAT.md.
 - Evan Miller, the author of ReadStat C/C++ library.  See LICENSE_READSTAT.md.
+- [David Anthoff](https://github.com/davidanthoff), who provide many valuable ideas at the early stage of development.
 
-I also want to thank the active members at the Julia Discourse community.  This project wouldn't be possible without all the help I got from the community.  That's the true beauty of open-source development.
+I also want to thank all the active members at the [Julia Discourse community] (https://discourse.julialang.org).  This project wouldn't be possible without all the help I got from the community.  That's the beauty of open-source development.
