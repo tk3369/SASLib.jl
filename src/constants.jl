@@ -1,11 +1,6 @@
 # default settings
-const default_encoding = "UTF-8"
-const default_chunksize = 0
-const default_convert_dates = true
-# const default_convert_empty_string_to_missing = true
-const default_convert_text = true
-const default_convert_header_text = true
-const default_verbose_level = 1  # little verbose by default
+const default_chunk_size = 0
+const default_verbose_level = 1 
 
 # interesting... using semicolons would make it into a 1-dimensional array
 const magic = [
@@ -70,9 +65,9 @@ const page_comp_type = -28672
 const page_mix_types = [512, 640]
 const page_meta_data_mix_types = vcat(page_meta_type, page_data_type, page_mix_types)
 const subheader_pointers_offset = 8
-const truncated_subheader_id = 1
-const compressed_subheader_id = 4
-const compressed_subheader_type = 1
+const subheader_comp_uncompressed = 0
+const subheader_comp_truncated = 1
+const subheader_comp_compressed = 4
 const text_block_size_length = 2
 const row_length_offset_multiplier = 5
 const row_count_offset_multiplier = 6
@@ -91,24 +86,15 @@ const column_data_length_offset = 8
 const column_data_length_length = 4
 const column_type_offset = 14
 const column_type_length = 1
-const column_format_text_subheader_index_offset = 22
-const column_format_text_subheader_index_length = 2
-const column_format_offset_offset = 24
-const column_format_offset_length = 2
-const column_format_length_offset = 26
-const column_format_length_length = 2
-const column_label_text_subheader_index_offset = 28
-const column_label_text_subheader_index_length = 2
-const column_label_offset_offset = 30
-const column_label_offset_length = 2
-const column_label_length_offset = 32
-const column_label_length_length = 2
-const rle_compression = b"SASYZCRL"
-const rdc_compression = b"SASYZCR2"
 const sas_date_origin = Date(1960, 1, 1)
 const sas_datetime_origin = DateTime(sas_date_origin)
  
-const compression_literals = [rle_compression, rdc_compression]
+const rle_compression = b"SASYZCRL"
+const rdc_compression = b"SASYZCR2"
+
+const compression_method_none = 0x00
+const compression_method_rle  = 0x01
+const compression_method_rdc  = 0x02
 
 # Courtesy of Evan Miller's ReadStat project
 # Source: https://github.com/WizardMac/ReadStat/blob/master/src/sas/readstat_sas.c
@@ -139,7 +125,6 @@ const encoding_names = Dict(
     140 => "EUC-KR"
 )
 
-
 const index_rowSizeIndex = 0
 const index_rowSizeIndex = 0
 const index_columnSizeIndex = 1
@@ -150,41 +135,48 @@ const index_columnAttributesIndex = 5
 const index_formatAndLabelIndex = 6
 const index_columnListIndex = 7
 const index_dataSubheaderIndex = 8
-
+const index_end_of_header = 100
 
 const subheader_signature_to_index = Dict(
-    b"\xF7\xF7\xF7\xF7" => index_rowSizeIndex,
-    b"\x00\x00\x00\x00\xF7\xF7\xF7\xF7" => index_rowSizeIndex,
+
+    b"\xF7\xF7\xF7\xF7"                 => index_rowSizeIndex,
     b"\xF7\xF7\xF7\xF7\x00\x00\x00\x00" => index_rowSizeIndex,
+    b"\x00\x00\x00\x00\xF7\xF7\xF7\xF7" => index_rowSizeIndex,
     b"\xF7\xF7\xF7\xF7\xFF\xFF\xFB\xFE" => index_rowSizeIndex,
-    b"\xF6\xF6\xF6\xF6" => index_columnSizeIndex,
+
+    b"\xF6\xF6\xF6\xF6"                 => index_columnSizeIndex,
     b"\x00\x00\x00\x00\xF6\xF6\xF6\xF6" => index_columnSizeIndex,
     b"\xF6\xF6\xF6\xF6\x00\x00\x00\x00" => index_columnSizeIndex,
     b"\xF6\xF6\xF6\xF6\xFF\xFF\xFB\xFE" => index_columnSizeIndex,
-    b"\x00\xFC\xFF\xFF" => index_subheaderCountsIndex,
-    b"\xFF\xFF\xFC\x00" => index_subheaderCountsIndex,
+
+    b"\x00\xFC\xFF\xFF"                 => index_subheaderCountsIndex,
+    b"\xFF\xFF\xFC\x00"                 => index_subheaderCountsIndex,
     b"\x00\xFC\xFF\xFF\xFF\xFF\xFF\xFF" => index_subheaderCountsIndex,
     b"\xFF\xFF\xFF\xFF\xFF\xFF\xFC\x00" => index_subheaderCountsIndex,
-    b"\xFD\xFF\xFF\xFF" => index_columnTextIndex,
-    b"\xFF\xFF\xFF\xFD" => index_columnTextIndex,
+
+    b"\xFD\xFF\xFF\xFF"                 => index_columnTextIndex,
+    b"\xFF\xFF\xFF\xFD"                 => index_columnTextIndex,
     b"\xFD\xFF\xFF\xFF\xFF\xFF\xFF\xFF" => index_columnTextIndex,
     b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFD" => index_columnTextIndex,
-    b"\xFF\xFF\xFF\xFF" => index_columnNameIndex,
+
+    b"\xFF\xFF\xFF\xFF"                 => index_columnNameIndex,
     b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF" => index_columnNameIndex,
-    b"\xFC\xFF\xFF\xFF" => index_columnAttributesIndex,
-    b"\xFF\xFF\xFF\xFC" => index_columnAttributesIndex,
+
+    b"\xFC\xFF\xFF\xFF"                 => index_columnAttributesIndex,
+    b"\xFF\xFF\xFF\xFC"                 => index_columnAttributesIndex,
     b"\xFC\xFF\xFF\xFF\xFF\xFF\xFF\xFF" => index_columnAttributesIndex,
     b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFC" => index_columnAttributesIndex,
-    b"\xFE\xFB\xFF\xFF" => index_formatAndLabelIndex,
-    b"\xFF\xFF\xFB\xFE" => index_formatAndLabelIndex,
+
+    b"\xFE\xFB\xFF\xFF"                 => index_formatAndLabelIndex,
+    b"\xFF\xFF\xFB\xFE"                 => index_formatAndLabelIndex,
     b"\xFE\xFB\xFF\xFF\xFF\xFF\xFF\xFF" => index_formatAndLabelIndex,
     b"\xFF\xFF\xFF\xFF\xFF\xFF\xFB\xFE" => index_formatAndLabelIndex,
-    b"\xFE\xFF\xFF\xFF" => index_columnListIndex,
-    b"\xFF\xFF\xFF\xFE" => index_columnListIndex,
+
+    b"\xFE\xFF\xFF\xFF"                 => index_columnListIndex,
+    b"\xFF\xFF\xFF\xFE"                 => index_columnListIndex,
     b"\xFE\xFF\xFF\xFF\xFF\xFF\xFF\xFF" => index_columnListIndex,
     b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFE" => index_columnListIndex
 )
-
 
 # List of frequently used SAS date and datetime formats
 # http://support.sas.com/documentation/cdl/en/etsug/60372/HTML/default/viewer.htm#etsug_intervals_sect009.htm
@@ -214,3 +206,12 @@ const zero_space = b"\x00 "
 const column_type_none    = 0x00
 const column_type_decimal = 0x01
 const column_type_string  = 0x02
+
+const VENDOR_STAT_TRANSFER = 0x00
+const VENDOR_SAS           = 0x01
+
+const FALLBACK_ENCODING = "UTF-8"
+const ENCODINGS_OK_WITH_BASE_TRANSCODER = [ "UTF-8" , "US-ASCII" ]
+
+const REGULAR_STR_ARRAY(n) = Array{String}(n)
+
