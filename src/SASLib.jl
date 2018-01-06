@@ -27,7 +27,7 @@ struct ReaderConfig
     convert_dates::Bool
     include_columns::Vector
     exclude_columns::Vector
-    string_array_fn::Dict{Symbol, Any}
+    string_array_fn::Dict{Symbol, Function}
     verbose_level::Int64
 end
 
@@ -111,7 +111,7 @@ mutable struct Handler
     # creator_proc::Union{Void, Vector{UInt8}}
 
     byte_chunk::Dict{Symbol, Vector{UInt8}}
-    string_chunk::Dict{Symbol, AbstractArray}
+    string_chunk::Dict{Symbol, AbstractArray{String,1}}
     current_row_in_chunk_index::Int64
 
     current_page::Int64    
@@ -944,6 +944,9 @@ function read_chunk(handler, nrows=0)
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
 
+    ns > 0 && !handler.use_base_transcoder && 
+        info("Note: encoding incompatible with UTF-8, reader will take more time")
+
     _fill_column_indices(handler)
 
     # allocate columns
@@ -1010,15 +1013,18 @@ const EMPTY_STRING = ""
 function createstrarray(handler, column_symbol, nrows)
     if haskey(handler.config.string_array_fn, column_symbol)
         handler.config.string_array_fn[column_symbol](nrows)
+    elseif haskey(handler.config.string_array_fn, :_all_)
+        handler.config.string_array_fn[:_all_](nrows)
     else
+        ty = String
         if nrows <= 2 << 7 
-            ObjectPool{String, UInt8}(EMPTY_STRING, nrows)
+            ObjectPool{Type(ty), UInt8}(EMPTY_STRING, nrows)
         elseif nrows <= 2 << 15
-            ObjectPool{String, UInt16}(EMPTY_STRING, nrows)
+            ObjectPool{Type(ty), UInt16}(EMPTY_STRING, nrows)
         elseif nrows <= 2 << 31
-            ObjectPool{String, UInt32}(EMPTY_STRING, nrows)
+            ObjectPool{Type(ty), UInt32}(EMPTY_STRING, nrows)
         else
-            ObjectPool{String, UInt64}(EMPTY_STRING, nrows)
+            ObjectPool{Type(ty), UInt64}(EMPTY_STRING, nrows)
         end
     end
 end
@@ -1327,10 +1333,9 @@ function process_byte_array_with_data(handler, offset, length, compression)
         elseif ct == column_type_string
             # issue 12 - heuristic for switching to regular Array type
             ar = handler.string_chunk[name]
-            if isa(ar, ObjectPool) &&
-                    handler.row_count > 10000 &&
-                    handler.current_row_in_file_index > 1 &&
+            if  handler.current_row_in_file_index > 10000 &&
                     handler.current_row_in_file_index % 200 == 0 &&
+                    isa(ar, ObjectPool) &&
                     ar.uniqueitemscount / ar.itemscount > 0.05
                 println1(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
                 ar = Array(ar)
@@ -1349,13 +1354,13 @@ end
 # Custom transcode function
 # Base.transcode is a must faster function than iconv's decode so use that 
 # whenever possible
-transcode_data(handler::Handler, bytes::Vector{UInt8}) = 
+@inline transcode_data(handler::Handler, bytes::Vector{UInt8}) = 
     handler.use_base_transcoder ? 
         Base.transcode(String, bytes) : 
         decode(bytes, handler.file_encoding)
 
 # metadata is always ASCII-based (I think)
-transcode_metadata(bytes::Vector{UInt8}) = 
+@inline transcode_metadata(bytes::Vector{UInt8}) = 
     Base.transcode(String, bytes)
 
 # Courtesy of ReadStat project
