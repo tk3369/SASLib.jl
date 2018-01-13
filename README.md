@@ -81,6 +81,7 @@ Key              |Type           |Description
 :column_info     | Array{Tuple}  | Tuple (column#, symbol, Num/Str, eltype, array type)
 :column_lengths  | Array{Int}    | Column lengths as in the SAS file format
 :column_offsets  | Array{Int}    | Column offsets as in the SAS file format
+:compression     | String        | "RLE", "RDC", "None", or "Unknown"
 :page_length     | Int           | Page length as in the SAS file format
 :page_count      | Int           | Number of pages as in the SAS file format
 :perf\_read\_data  | Float       | Performance stat: seconds used to read data into memory
