@@ -6,8 +6,8 @@ function getpath(dir, file)
     #println("================ $path ================")
     path
 end
-readfile(dir, file)  = readsas(getpath(dir, file))
-openfile(dir, file)  = SASLib.open(getpath(dir, file))
+readfile(dir, file; kwargs...)  = readsas(getpath(dir, file); kwargs...)
+openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
 
 @testset "SASLib" begin
 
@@ -125,6 +125,8 @@ openfile(dir, file)  = SASLib.open(getpath(dir, file))
 		@test result[:nrows] == 1440
 		@test result[:page_length] == 8192
 		@test sum(df[:ACTUAL]) ≈ 730337.0
+        handler = openfile("data_AHS2013", "topical.sas7bdat")
+        @test show(handler) == nothing
     end
 
     @testset "stat_transfer" begin
@@ -152,11 +154,15 @@ openfile(dir, file)  = SASLib.open(getpath(dir, file))
         @test mean(filter(!isnan, df[:PTCOSTGAS])) ≈ 255.51543209876544
     end
 
-    @testset "file encoding" begin
+    @testset "file encodings" begin
         result = readfile("data_reikoch", "extr.sas7bdat")
         df = result[:data]
         @test result[:file_encoding] == "CP932"
         @test df[:AETXT][1] == "眠気"
+
+        result = readfile("data_pandas", "test1.sas7bdat", encoding = "US-ASCII")
+        @test result[:file_encoding] == "US-ASCII"
+        @test result[:data][:Column42][3] == "dog"
     end
 
     @testset "handler object" begin
@@ -188,6 +194,15 @@ openfile(dir, file)  = SASLib.open(getpath(dir, file))
         result = readsas("data_AHS2013/homimp.sas7bdat", 
             string_array_fn = Dict(:RAS => REGULAR_STR_ARRAY))
         @test typeof(result[:data][:RAS]) == Array{String,1}
+
+        result = readsas("data_AHS2013/homimp.sas7bdat", 
+        string_array_fn = Dict(:_all_ => REGULAR_STR_ARRAY))
+        @test typeof(result[:data][:RAS])     == Array{String,1}
+        @test typeof(result[:data][:RAH])     == Array{String,1}
+        @test typeof(result[:data][:JRAS])    == Array{String,1}
+        @test typeof(result[:data][:JRAD])    == Array{String,1}
+        @test typeof(result[:data][:CONTROL]) == Array{String,1}
+
     end
 
     @testset "just reads" begin

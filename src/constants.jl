@@ -214,4 +214,5 @@ const FALLBACK_ENCODING = "UTF-8"
 const ENCODINGS_OK_WITH_BASE_TRANSCODER = [ "UTF-8" , "US-ASCII" ]
 
 const REGULAR_STR_ARRAY(n) = Array{String}(n)
+const EMPTY_STRING = ""
 

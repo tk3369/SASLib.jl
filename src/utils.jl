@@ -18,7 +18,20 @@ function brstrip(bytes::Vector{UInt8}, remove::Vector{UInt8})
     end
     return Vector{UInt8}()
 end
-#brstrip(b"\x01\x02\x03", b"\x03")
+
+# """
+# Faster version of rstrip (slightly modified version from julia master branch)
+# """
+# function rstrip2(s::String)
+#     i = endof(s)
+#     while 1 ≤ i
+#         c = s[i]
+#         j = prevind(s, i)
+#         c == ' ' || return s[1:i]
+#         i = j
+#     end
+#     EMPTY_STRING
+# end
 
 """
 Find needle in the haystack with both `Vector{UInt8}` type arguments.
@@ -35,12 +48,6 @@ function Base.contains(haystack::Vector{UInt8}, needle::Vector{UInt8})
     end
     return false
 end
-# contains(b"123", b"123")
-# contains(b"123456", b"123")
-# contains(b"123456", b"234")
-# contains(b"123456", b"456")
-# contains(b"123456", b"567")
-# contains(b"123456", b"xxx")
 
 # Fast implementation to `reinterpret` int/floats
 # See https://discourse.julialang.org/t/newbie-question-convert-two-8-byte-values-into-a-single-16-byte-value/7662/5
@@ -186,16 +193,27 @@ function convertfloat64f(bytes::Vector{UInt8}, endianess::Symbol)
     r
 end
 
-
-# """
-# Take 8 bytes and convert them into a UInt64 type.  The order is preserved.
-# """
-# function convertint64(a::UInt8,b::UInt8,c::UInt8,d::UInt8,e::UInt8,f::UInt8,g::UInt8,h::UInt8)
-#     (UInt64(a) << 56) | (UInt64(b) << 48) | 
-#     (UInt64(c) << 40) | (UInt64(d) << 32) | 
-#     (UInt64(e) << 24) | (UInt64(f) << 16) | 
-#     (UInt64(g) << 8)  |  UInt64(h)
-# end
+# Conversion routines for 1,2,4,8-byte words into a single 64-bit integer
+@inline function convertint64B(a::UInt8,b::UInt8,c::UInt8,d::UInt8,e::UInt8,f::UInt8,g::UInt8,h::UInt8)
+    (Int64(a) << 56) | (Int64(b) << 48) | (Int64(c) << 40) | (Int64(d) << 32) | 
+    (Int64(e) << 24) | (Int64(f) << 16) | (Int64(g) << 8)  |  Int64(h)
+end
+@inline function convertint64L(a::UInt8,b::UInt8,c::UInt8,d::UInt8,e::UInt8,f::UInt8,g::UInt8,h::UInt8)
+    (Int64(h) << 56) | (Int64(g) << 48) | (Int64(f) << 40) | (Int64(e) << 32) | 
+    (Int64(d) << 24) | (Int64(c) << 16) | (Int64(b) << 8)  |  Int64(a)
+end
+@inline function convertint64B(a::UInt8,b::UInt8,c::UInt8,d::UInt8)
+    (Int64(a) << 24) | (Int64(b) << 16) | (Int64(c) << 8)  |  Int64(d)
+end
+@inline function convertint64L(a::UInt8,b::UInt8,c::UInt8,d::UInt8)
+    (Int64(d) << 24) | (Int64(c) << 16) | (Int64(b) << 8)  |  Int64(a)
+end
+@inline function convertint64B(a::UInt8,b::UInt8)
+    (Int64(a) << 8)  |  Int64(b)
+end
+@inline function convertint64L(a::UInt8,b::UInt8)
+    (Int64(b) << 8)  | Int64(a)
+end
 
 # this version is slightly slower 
 # function convertint64b(a::UInt8,b::UInt8,c::UInt8,d::UInt8,e::UInt8,f::UInt8,g::UInt8,h::UInt8)
@@ -212,15 +230,15 @@ end
 
 
 # TODO cannot use AbstractString for some reasons
-"""
-Concatenate an array of strings to a single string
-"""
-concatenate(strArray::Vector{T} where T <: AbstractString, separator=",") = 
-    foldl((x, y) -> *(x, y, separator), "", strArray)[1:end-length(separator)]
+# """
+# Concatenate an array of strings to a single string
+# """
+# concatenate(strArray::Vector{T} where T <: AbstractString, separator=",") = 
+#     foldl((x, y) -> *(x, y, separator), "", strArray)[1:end-length(separator)]
 
-"""
-Convert a dictionary to an array of k=>v strings 
-"""
-stringarray(dict::Dict) = 
-    ["$x => $y" for (x, y) in dict]
+# """
+# Convert a dictionary to an array of k=>v strings 
+# """
+# stringarray(dict::Dict) = 
+#     ["$x => $y" for (x, y) in dict]
 
