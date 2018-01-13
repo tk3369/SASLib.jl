@@ -230,15 +230,15 @@ end
 
 
 # TODO cannot use AbstractString for some reasons
-"""
-Concatenate an array of strings to a single string
-"""
-concatenate(strArray::Vector{T} where T <: AbstractString, separator=",") = 
-    foldl((x, y) -> *(x, y, separator), "", strArray)[1:end-length(separator)]
+# """
+# Concatenate an array of strings to a single string
+# """
+# concatenate(strArray::Vector{T} where T <: AbstractString, separator=",") = 
+#     foldl((x, y) -> *(x, y, separator), "", strArray)[1:end-length(separator)]
 
-"""
-Convert a dictionary to an array of k=>v strings 
-"""
-stringarray(dict::Dict) = 
-    ["$x => $y" for (x, y) in dict]
+# """
+# Convert a dictionary to an array of k=>v strings 
+# """
+# stringarray(dict::Dict) = 
+#     ["$x => $y" for (x, y) in dict]
 
