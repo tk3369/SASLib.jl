@@ -117,7 +117,10 @@ mutable struct Handler
     current_page::Int64    
     vendor::UInt8
     use_base_transcoder::Bool
-    
+
+    string_decoder_buffer::IOBuffer
+    string_decoder::StringDecoder
+
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
         config)
@@ -253,7 +256,8 @@ function readsas(filename::AbstractString;
             include_columns, exclude_columns, string_array_fn, verbose_level))
         return read(handler)
     finally
-        (handler != nothing) && close(handler)
+        isdefined(handler, :string_decoder) && Base.close(handler.string_decoder)
+        handler != nothing && close(handler)
     end
     return Dict()
 end
@@ -272,35 +276,31 @@ function _read_float(handler, offset, width)
 end
 
 # Read a single signed integer of the given width (1, 2, 4 or 8).
-# TODO optimize
-function _read_int(handler, offset, width)
-    if !(width in [1, 2, 4, 8])
-        throw(ArgumentError("invalid int width $(width)"))
-    end
-    buf = _read_bytes(handler, offset, width)
-    value = reinterpret(Dict(1 => Int8, 2 => Int16, 4 => Int32, 8 => Int64)[width], buf)[1]
-    if (handler.byte_swap)
-        value = bswap(value)
-    end
-    return value
+@inline function _read_int(handler, offset, width)
+    b = _read_bytes(handler, offset, width)
+    width == 1 ? Int64(b[1]) : 
+        (handler.file_endianness == :BigEndian? convertint64B(b...) : convertint64L(b...))
 end
 
-function _read_bytes(handler, offset, len)
-    if handler.cached_page == []
-        seek(handler.io, offset)
-        try
-            return Base.read(handler.io, len)
-        catch
-            throw(FileFormatError("Unable to read $(len) bytes from file position $(offset)"))
-        end
-    else
-        if offset + len > length(handler.cached_page)
-            throw(FileFormatError(
-                "The cached page $(length(handler.cached_page)) is too small " *
-                "to read for range positions $offset to $len"))
-        end
-        return handler.cached_page[offset+1:offset+len]  #offset is 0-based
-    end
+@inline function _read_bytes(handler, offset, len)
+    return handler.cached_page[offset+1:offset+len]  #offset is 0-based
+    # => too conservative.... we expect cached_page to be filled before this function is called
+    # if handler.cached_page == []
+    #     warn("_read_byte function going to disk")
+    #     seek(handler.io, offset)
+    #     try
+    #         return Base.read(handler.io, len)
+    #     catch
+    #         throw(FileFormatError("Unable to read $(len) bytes from file position $(offset)"))
+    #     end
+    # else
+    #     if offset + len > length(handler.cached_page)
+    #         throw(FileFormatError(
+    #             "The cached page $(length(handler.cached_page)) is too small " *
+    #             "to read for range positions $offset to $len"))
+    #     end
+    #     return handler.cached_page[offset+1:offset+len]  #offset is 0-based
+    # end
 end
 
 # Get file properties from the header (first page of the file).
@@ -359,14 +359,14 @@ function _get_properties(handler)
     else
         handler.file_endianness = :BigEndian
     end
-    println2(handler, "file_endianness = $(handler.file_endianness)")
+    # println2(handler, "file_endianness = $(handler.file_endianness)")
     
     # Detect system-endianness and determine if byte swap will be required
     handler.sys_endianness = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
-    println2(handler, "system endianess = $(handler.sys_endianness)")
+    # println2(handler, "system endianess = $(handler.sys_endianness)")
 
     handler.byte_swap = handler.sys_endianness != handler.file_endianness
-    println2(handler, "byte_swap = $(handler.byte_swap)")
+    # println2(handler, "byte_swap = $(handler.byte_swap)")
         
     # Get encoding information
     buf = _read_bytes(handler, encoding_offset, 1)[1]
@@ -385,10 +385,20 @@ function _get_properties(handler)
             warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
         handler.file_encoding = handler.config.encoding
     end
+    # println2(handler, "Final encoding = $(handler.file_encoding)")
 
     # remember if Base.transcode should be used
     handler.use_base_transcoder = uppercase(handler.file_encoding) in
         ENCODINGS_OK_WITH_BASE_TRANSCODER
+    # println2(handler, "Use base encoder = $(handler.use_base_transcoder)")
+
+    # prepare string decoder if needed 
+    if !handler.use_base_transcoder
+        println2(handler, "creating string buffer/decoder for with $(handler.file_encoding)")
+        handler.string_decoder_buffer = IOBuffer()
+        handler.string_decoder = StringDecoder(handler.string_decoder_buffer, 
+            handler.file_encoding)
+    end
 
     # Get platform information
     buf = _read_bytes(handler, platform_offset, platform_length)
@@ -420,7 +430,7 @@ function _get_properties(handler)
     handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
 
     # Read the rest of the header into cached_page.
-    println3(handler, "Reading rest of page, header_length=$(handler.header_length) willread=$(handler.header_length - 288)")
+    # println3(handler, "Reading rest of page, header_length=$(handler.header_length) willread=$(handler.header_length - 288)")
     buf = Base.read(handler.io, handler.header_length - 288)
     append!(handler.cached_page, buf)
     if length(handler.cached_page) != handler.header_length
@@ -442,11 +452,11 @@ function _get_properties(handler)
     
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
     handler.sas_release = transcode_metadata(brstrip(buf, zero_space))
-    println2(handler, "SAS Release = $(handler.sas_release)")
+    # println2(handler, "SAS Release = $(handler.sas_release)")
 
     # determine vendor - either SAS or STAT_TRANSFER
     _determine_vendor(handler)
-    println2(handler, "Vendor = $(handler.vendor)")
+    # println2(handler, "Vendor = $(handler.vendor)")
 
     buf = _read_bytes(handler, sas_server_type_offset + total_align, sas_server_type_length)
     handler.server_type = transcode_metadata(brstrip(buf, zero_space))
@@ -469,10 +479,10 @@ end
 
 # Keep reading pages until a meta page is found
 function _parse_metadata(handler)
-    println3(handler, "IN: _parse_metadata")
+    # println3(handler, "IN: _parse_metadata")
     done = false
     while !done
-        println3(handler, "  filepos=$(position(handler.io)) page_length=$(handler.page_length)")
+        # println3(handler, "  filepos=$(position(handler.io)) page_length=$(handler.page_length)")
         handler.cached_page = Base.read(handler.io, handler.page_length)
         if length(handler.cached_page) <= 0
             break
@@ -485,14 +495,14 @@ function _parse_metadata(handler)
 end
 
 function _process_page_meta(handler)
-    println3(handler, "IN: _process_page_meta")
+    # println3(handler, "IN: _process_page_meta")
     _read_page_header(handler)  
     pt = vcat([page_meta_type, page_amd_type], page_mix_types)
     # println("  pt=$pt handler.current_page_type=$(handler.current_page_type)")
     if handler.current_page_type in pt
-        println3(handler, "  current_page_type = $(pagetype(handler.current_page_type))")
-        println3(handler, "  current_page = $(handler.current_page)")
-        println3(handler, "  $(concatenate(stringarray(currentpos(handler))))")
+        # println3(handler, "  current_page_type = $(pagetype(handler.current_page_type))")
+        # println3(handler, "  current_page = $(handler.current_page)")
+        # println3(handler, "  $(concatenate(stringarray(currentpos(handler))))")
         _process_page_metadata(handler)
     end
     # println("  condition var #1: handler.current_page_type=$(handler.current_page_type)")
@@ -503,25 +513,25 @@ function _process_page_meta(handler)
 end
 
 function _read_page_header(handler)
-    println3(handler, "IN: _read_page_header")
+    # println3(handler, "IN: _read_page_header")
     bit_offset = handler.page_bit_offset
     tx = page_type_offset + bit_offset
     handler.current_page_type = _read_int(handler, tx, page_type_length)
     # println("  bit_offset=$bit_offset tx=$tx handler.current_page_type=$(handler.current_page_type)")
     tx = block_count_offset + bit_offset
     handler.current_page_block_count = _read_int(handler, tx, block_count_length)
-    println3(handler, "  tx=$tx handler.current_page_block_count=$(handler.current_page_block_count)")
+    # println3(handler, "  tx=$tx handler.current_page_block_count=$(handler.current_page_block_count)")
     tx = subheader_count_offset + bit_offset
     handler.current_page_subheaders_count = _read_int(handler, tx, subheader_count_length)
-    println3(handler, "  tx=$tx handler.current_page_subheaders_count=$(handler.current_page_subheaders_count)")
+    # println3(handler, "  tx=$tx handler.current_page_subheaders_count=$(handler.current_page_subheaders_count)")
 end
 
 function _process_page_metadata(handler)
-    println3(handler, "IN: _process_page_metadata")
+    # println3(handler, "IN: _process_page_metadata")
     bit_offset = handler.page_bit_offset
     # println("  bit_offset=$bit_offset")
-    println3(handler, "  filepos=$(Base.position(handler.io))")
-    println3(handler, "  loop from 0 to $(handler.current_page_subheaders_count-1)")
+    # println3(handler, "  filepos=$(Base.position(handler.io))")
+    # println3(handler, "  loop from 0 to $(handler.current_page_subheaders_count-1)")
     for i in 0:handler.current_page_subheaders_count-1
         # println3(handler, " i=$i")
         pointer = _process_subheader_pointers(handler, subheader_pointers_offset + bit_offset, i)
@@ -697,20 +707,20 @@ function _process_subheader_counts(handler, offset, length)
 end
 
 function _process_columntext_subheader(handler, offset, length)
-    println3(handler, "IN: _process_columntext_subheader")
+    # println3(handler, "IN: _process_columntext_subheader")
     
     p = offset + handler.int_length
     text_block_size = _read_int(handler, p, text_block_size_length)
-    println3(handler, "  text_block_size=$text_block_size")
+    # println3(handler, "  text_block_size=$text_block_size")
     # println("  before reading buf: offset=$offset")
 
     # TODO this buffer includes the text_block_size itself in the beginning...
     buf = _read_bytes(handler, p, text_block_size)
     cname_raw = brstrip(buf[1:text_block_size], zero_space)
-    println3(handler, "  cname_raw=$cname_raw")
+    # println3(handler, "  cname_raw=$cname_raw")
 
     cname = cname_raw
-    println3(handler, "  decoded=$(transcode_metadata(cname))")
+    # println3(handler, "  decoded=$(transcode_metadata(cname))")
     push!(handler.column_names_strings, cname)
 
     #println3(handler, "  handler.column_names_strings=$(handler.column_names_strings)")
@@ -730,8 +740,8 @@ function _process_columntext_subheader(handler, offset, length)
             compression_method = compression_method_none
         end
 
-        println3(handler, "  handler.lcs = $(handler.lcs)")
-        println3(handler, "  handler.lcp = $(handler.lcp)")
+        # println3(handler, "  handler.lcs = $(handler.lcs)")
+        # println3(handler, "  handler.lcp = $(handler.lcp)")
 
         # save compression info in the handler
         handler.compression = compression_method
@@ -755,7 +765,7 @@ function _process_columntext_subheader(handler, offset, length)
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
             creator_proc = buf[1:handler.lcp]
-            println3(handler, "  uncompressed: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
+            # println3(handler, "  uncompressed: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
         elseif compression_method == compression_method_rle
             offset1 = offset + 40
             if handler.U64
@@ -763,7 +773,7 @@ function _process_columntext_subheader(handler, offset, length)
             end
             buf = _read_bytes(handler, offset1, handler.lcp)
             creator_proc = buf[1:handler.lcp]
-            println3(handler, "  RLE compression: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
+            # println3(handler, "  RLE compression: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
         elseif handler.lcs > 0
             handler.lcp = 0
             offset1 = offset + 16
@@ -772,7 +782,7 @@ function _process_columntext_subheader(handler, offset, length)
             end
             buf = _read_bytes(handler, offset1, handler.lcs)
             creator_proc = buf[1:handler.lcp]
-            println3(handler, "  LCS>0: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
+            # println3(handler, "  LCS>0: creator proc=$creator_proc decoded=$(transcode_metadata(creator_proc))")
         else
             creator_proc = nothing
         end
@@ -781,7 +791,7 @@ end
         
 
 function _process_columnname_subheader(handler, offset, length)
-    println3(handler, "IN: _process_columnname_subheader")
+    # println3(handler, "IN: _process_columnname_subheader")
     int_len = handler.int_length
     # println(" int_len=$int_len")
     # println(" offset=$offset")    
@@ -859,7 +869,7 @@ function _process_columnlist_subheader(handler, offset, length)
 end
 
 function _process_format_subheader(handler, offset, length)
-    println3(handler, "IN: _process_format_subheader")
+    # println3(handler, "IN: _process_format_subheader")
     int_len = handler.int_length
     col_format_idx        = offset + 22 + 3 * int_len
     col_format_offset     = offset + 24 + 3 * int_len
@@ -869,12 +879,12 @@ function _process_format_subheader(handler, offset, length)
     col_label_len         = offset + 32 + 3 * int_len
 
     format_idx = _read_int(handler, col_format_idx, 2)
-    println3(handler, "  format_idx=$format_idx")
+    # println3(handler, "  format_idx=$format_idx")
     # TODO julia bug?  must reference Base.length explicitly or else we get MethodError: objects of type Int64 are not callable
     format_idx = min(format_idx, Base.length(handler.column_names_strings) - 1)
     format_start = _read_int(handler, col_format_offset, 2)
     format_len = _read_int(handler, col_format_len, 2)
-    println3(handler, "  format_idx=$format_idx, format_start=$format_start, format_len=$format_len")
+    # println3(handler, "  format_idx=$format_idx, format_start=$format_start, format_len=$format_len")
     format_names = handler.column_names_strings[format_idx+1]
     column_format = transcode_metadata(format_names[format_start+1: format_start + format_len])
 
@@ -1003,12 +1013,12 @@ function read_chunk(handler, nrows=0)
         :column_symbols => column_symbols,
         :column_names => column_names,
         :column_info => column_info,
+        :compression => compressionstring(handler),
         :perf_read_data => perf_read_data,
         :perf_type_conversion => perf_chunk_to_data_frame
         )
 end
 
-const EMPTY_STRING = ""
 # not extremely efficient but is a safe way to do it
 function createstrarray(handler, column_symbol, nrows)
     if haskey(handler.config.string_array_fn, column_symbol)
@@ -1038,13 +1048,25 @@ function nullresult(filename)
     )
 end
 
+function compressionstring(handler)
+    if handler.compression == compression_method_none 
+        "None" 
+    elseif handler.compression == compression_method_rdc
+        "RDC"
+    elseif handler.compression == compression_method_rle
+        "RLE"
+    else
+        "Unknown"
+    end
+end
+
 function _read_next_page_content(handler)
-    println3(handler, "IN: _read_next_page_content")
-    println3(handler, "  positions = $(concatenate(stringarray(currentpos(handler))))")
+    # println3(handler, "IN: _read_next_page_content")
+    # println3(handler, "  positions = $(concatenate(stringarray(currentpos(handler))))")
     handler.current_page += 1
-    println3(handler, "  current_page = $(handler.current_page)")
-    println3(handler, "  file position = $(Base.position(handler.io))")
-    println3(handler, "  page_length = $(handler.page_length)")
+    # println3(handler, "  current_page = $(handler.current_page)")
+    # println3(handler, "  file position = $(Base.position(handler.io))")
+    # println3(handler, "  page_length = $(handler.page_length)")
 
     handler.current_page_data_subheader_pointers = []
     handler.cached_page = Base.read(handler.io, handler.page_length)
@@ -1058,9 +1080,9 @@ function _read_next_page_content(handler)
         _process_page_metadata(handler)
     end
 
-    println3(handler, "  type=$(pagetype(handler.current_page_type))")
+    # println3(handler, "  type=$(pagetype(handler.current_page_type))")
     if ! (handler.current_page_type in page_meta_data_mix_types)
-        println3(handler, "page type not found $(handler.current_page_type)... reading next one")
+        # println3(handler, "page type not found $(handler.current_page_type)... reading next one")
         return _read_next_page_content(handler)
     end
     return false
@@ -1304,7 +1326,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
     #    Ideally, we can still go by the result's column index
     #    and then only at the very end (outer loop) we assign them to 
     #    the column symbols
-    for (k, name, ty) in handler.column_indices
+    @inbounds for (k, name, ty) in handler.column_indices
         lngt = handler.column_data_lengths[k]
         start = handler.column_data_offsets[k]
         ct = handler.column_types[k]
@@ -1325,24 +1347,26 @@ function process_byte_array_with_data(handler, offset, length, compression)
             #     println3(handler, "  source =$(source[start+1:start+lngt])")
             # end
             dst = handler.byte_chunk[name]
-            for k in 1:lngt
-                @inbounds dst[m + k] = source[start + k]
+            for i in 1:lngt
+                @inbounds dst[m + i] = source[start + i]
             end
             # @inbounds handler.byte_chunk[name][m+1:m+lngt] = source[start+1:start+lngt]
             #println3(handler, "byte_chunk[$name][$(m+1):$(m+lngt)] = source[$(start+1):$(start+lngt)] => $(source[start+1:start+lngt])")
         elseif ct == column_type_string
             # issue 12 - heuristic for switching to regular Array type
             ar = handler.string_chunk[name]
-            if  handler.current_row_in_file_index > 2000 &&
-                    handler.current_row_in_file_index % 200 == 0 &&
+            if  handler.current_row_in_chunk_index > 2000 &&
+                    handler.current_row_in_chunk_index % 200 == 0 &&
                     isa(ar, ObjectPool) &&
                     ar.uniqueitemscount / ar.itemscount > 0.10
                 println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
                 ar = Array(ar)
                 handler.string_chunk[name] = ar
             end
+            pos = lastcharpos(source, start, lngt)
             @inbounds ar[current_row+1] = 
-                rstrip(transcode_data(handler, source[start+1:(start+lngt)]))
+                # rstrip2(transcode_data(handler, source, start+1, start+lngt, lngt))
+                transcode_data(handler, source, start+1, start+pos, pos)
         end
     end
 
@@ -1351,26 +1375,71 @@ function process_byte_array_with_data(handler, offset, length, compression)
     handler.current_row_in_file_index += 1
 end
 
-# Custom transcode function
-# Base.transcode is a must faster function than iconv's decode so use that 
-# whenever possible
-@inline transcode_data(handler::Handler, bytes::Vector{UInt8}) = 
-    handler.use_base_transcoder || seven_bit_data(bytes) ? 
-        String(bytes) : decode(bytes, handler.file_encoding)
+# Notes about performance enhancement related to stripping off space characters.
+#
+# Apparently SAS always use 0x20 (space) even for non-ASCII encodings
+# but what if 0x20 happens to be there as part of a multi-byte encoding? 
+# ```
+# julia> decode([0x02, 0x20], "UTF-16")
+# "Ƞ"
+# ````
+# 
+# Knowing that we can only understand a certain set of char encodings as in
+# the constants.jl file, we just need to make sure that the ones that we
+# support does not use 0x20 as part of any multi-byte chars.
+# 
+# Seems ok. Some info available at 
+# https://www.debian.org/doc/manuals/intro-i18n/ch-codes.en.html
+#
+# find the last char position that is not space
+function lastcharpos(source::Vector{UInt8}, start::Int64, lngt::Int64)
+    i = lngt
+    while i ≥ 1
+        if source[start + i] != 0x20
+            break
+        end
+        i -= 1
+    end
+    return i
+end
+
+# TODO possible issue with the 7-bit check... maybe not all encodings are ascii compatible for 7-bit values?
+# Use unsafe_string to avoid bounds check for performance reason
+# Use custom decode_string function with our own decoder/decoder buffer to avoid unncessary objects creation
+@inline transcode_data(handler::Handler, source::Vector{UInt8}, startidx::Int64, endidx::Int64, lngt::Int64) = 
+    handler.use_base_transcoder || seven_bit_data(source, startidx, endidx) ? 
+        unsafe_string(pointer(source) + startidx - 1, lngt): 
+        decode_string(source, startidx, endidx, handler.string_decoder_buffer, handler.string_decoder)
+        #decode_string2(source[startidx:endidx], handler.file_encoding)
 
 # metadata is always ASCII-based (I think)
 @inline transcode_metadata(bytes::Vector{UInt8}) = 
     Base.transcode(String, bytes)
 
 # determine if string data contains only 7-bit characters
-@inline function seven_bit_data(bytes)
-    for i in 1:length(bytes)
-        if bytes[i] > 0x7f
+@inline function seven_bit_data(source::Vector{UInt8}, startidx::Int64, endidx::Int64)
+    for i in startidx:endidx
+        if source[i] > 0x7f
             return false
         end
     end
     true
 end
+
+@inline function decode_string(source::Vector{UInt8}, startidx::Int64, endidx::Int64, io::IOBuffer, decoder::StringDecoder)
+    truncate(io, 0)
+    for i in startidx:endidx
+        write(io, source[i])
+    end
+    seek(io, 0)
+    str = String(Base.read(decoder))
+    # println("decoded ", str)
+    str
+end
+
+# @inline function decode_string2(bytes, encoding)
+#     decode(bytes, encoding)
+# end
 
 # Courtesy of ReadStat project
 # https://github.com/WizardMac/ReadStat
@@ -1619,7 +1688,7 @@ function _fill_column_indices(handler)
             push!(handler.column_indices, (j, name, handler.column_types[j]))
         end
     end
-    println2(handler, "column_indices = $(handler.column_indices)")
+    # println2(handler, "column_indices = $(handler.column_indices)")
 end
 
 function _determine_vendor(handler::Handler)
