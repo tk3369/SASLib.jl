@@ -1,14 +1,14 @@
 ## SASLib vs ReadStat results
 
-Key     | Description
-----------------------------------
-F64     | number of Float64 columns
-STR     | number of String columns
-DT      | number of date/time coumns
-COMP    | compression method
-S/R     | SASLib time divided by ReadStat time
-SA/R    | SASLib time (regular string arrays) divided by ReadStat time
-SASLibA | SASLib (regular string arrays)
+Key     | Description |
+--------|-------------------------|
+F64     | number of Float64 columns|
+STR     | number of String columns|
+DT      | number of date/time coumns|
+COMP    | compression method|
+S/R     | SASLib time divided by ReadStat time|
+SA/R    | SASLib time (regular string arrays) divided by ReadStat time|
+SASLibA | SASLib (regular string arrays)|
 
 
 ```
