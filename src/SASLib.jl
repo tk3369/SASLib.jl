@@ -1088,17 +1088,17 @@ function _read_next_page_content(handler)
     return false
 end
 
-function pagetype(value)
-    if value == page_meta_type
-        "META"
-    elseif value == page_data_type
-        "DATA"
-    elseif value in page_mix_types
-        "MIX"
-    else
-        "UNKNOWN"
-    end
-end
+# function pagetype(value)
+#     if value == page_meta_type
+#         "META"
+#     elseif value == page_data_type
+#         "DATA"
+#     elseif value in page_mix_types
+#         "MIX"
+#     else
+#         "UNKNOWN"
+#     end
+# end
 
 # convert Float64 value into Date object 
 function date_from_float(x::Vector{Float64})
@@ -1648,25 +1648,25 @@ end
 logdebug = println
 
 # string representation of the SubHeaderPointer structure
-function tostring(x::SubHeaderPointer) 
-  "<SubHeaderPointer: offset=$(x.offset), length=$(x.length), compression=$(x.compression), type=$(x.shtype)>"
-end
+# function tostring(x::SubHeaderPointer) 
+#   "<SubHeaderPointer: offset=$(x.offset), length=$(x.length), compression=$(x.compression), type=$(x.shtype)>"
+# end
 
 # Return the current position in various aspects (file, page, chunk)
 # This is useful for debugging purpose especially during incremental reads.
-function currentpos(handler)
-    d = Dict()
-    if isdefined(handler, :current_row_in_file_index) 
-        d[:current_row_in_file] = handler.current_row_in_file_index
-    end
-    if isdefined(handler, :current_row_in_page_index) 
-        d[:current_row_in_page] = handler.current_row_in_page_index
-    end
-    if isdefined(handler, :current_row_in_chunk_index) 
-        d[:current_row_in_chunk] = handler.current_row_in_chunk_index
-    end
-    return d
-end
+# function currentpos(handler)
+#     d = Dict()
+#     if isdefined(handler, :current_row_in_file_index) 
+#         d[:current_row_in_file] = handler.current_row_in_file_index
+#     end
+#     if isdefined(handler, :current_row_in_page_index) 
+#         d[:current_row_in_page] = handler.current_row_in_page_index
+#     end
+#     if isdefined(handler, :current_row_in_chunk_index) 
+#         d[:current_row_in_chunk] = handler.current_row_in_chunk_index
+#     end
+#     return d
+# end
 
 # fill column indices as a dictionary (key = column index, value = column symbol)
 function _fill_column_indices(handler)
