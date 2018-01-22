@@ -161,10 +161,11 @@ end
 # Version f.  Best one so far!
 # julia> @btime convertfloat64f(r, :LittleEndian)
 #   35.132 μs (2 allocations: 78.20 KiB)
-function convertfloat64f(bytes::Vector{UInt8}, endianess::Symbol) 
+# 
+# results will be updated directly in the provided array `r`
+function convertfloat64f!(r::AbstractVector{Float64}, bytes::Vector{UInt8}, endianess::Symbol) 
     L = length(bytes)
     n = div(L, 8)               # numbers to convert
-    r = zeros(Float64, n)       # results
     j = 1                       # result index
     @inbounds for i in 1:8:L
         if endianess == :LittleEndian
