@@ -28,6 +28,7 @@ struct ReaderConfig
     include_columns::Vector
     exclude_columns::Vector
     string_array_fn::Dict{Symbol, Function}
+    number_array_fn::Dict{Symbol, Function}
     verbose_level::Int64
 end
 
@@ -152,6 +153,7 @@ open(filename::AbstractString;
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
+        number_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
 
 Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
@@ -163,9 +165,10 @@ function open(filename::AbstractString;
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
+        number_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
     return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-        include_columns, exclude_columns, string_array_fn, verbose_level))
+        include_columns, exclude_columns, string_array_fn, number_array_fn, verbose_level))
 end
 
 """
@@ -205,6 +208,7 @@ readsas(filename::AbstractString;
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
+        number_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
 
 Read a SAS7BDAT file.  
@@ -239,6 +243,10 @@ For examples,
 or  
 `string_array_fn = Dict(:column1 => REGULAR_STR_ARRAY)`.
 
+For numeric columns, you may specify your own array constructors using
+the `number_array_fn` parameter.  Perhaps you have a different kind of
+array to store the values e.g. SharedArray.
+
 For debugging purpose, `verbose_level` may be set to a value higher than 1.
 Verbose level 0 will output nothing to the console, essentially a total quiet 
 option.
@@ -249,11 +257,12 @@ function readsas(filename::AbstractString;
         include_columns::Vector = [],
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
+        number_array_fn::Dict = Dict(),
         verbose_level::Int64 = 1)
     handler = nothing
     try
         handler = _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-            include_columns, exclude_columns, string_array_fn, verbose_level))
+            include_columns, exclude_columns, string_array_fn, number_array_fn, verbose_level))
         return read(handler)
     finally
         isdefined(handler, :string_decoder) && Base.close(handler.string_decoder)
@@ -982,7 +991,7 @@ function read_chunk(handler, nrows=0)
     perf_read_data = toq()
 
     tic()
-    rslt = _chunk_to_dataframe(handler)
+    rslt = _chunk_to_dataframe(handler, nrows)
     perf_chunk_to_data_frame = toq()
 
     # here column symbols contains only ones for columns that are actually read
@@ -1015,7 +1024,8 @@ function read_chunk(handler, nrows=0)
         :column_info => column_info,
         :compression => compressionstring(handler),
         :perf_read_data => perf_read_data,
-        :perf_type_conversion => perf_chunk_to_data_frame
+        :perf_type_conversion => perf_chunk_to_data_frame,
+        :process_id => myid()
         )
 end
 
@@ -1036,6 +1046,17 @@ function createstrarray(handler, column_symbol, nrows)
         else
             ObjectPool{Type(ty), UInt64}(EMPTY_STRING, nrows)
         end
+    end
+end
+
+# create numeric array
+function createnumarray(handler, column_symbol, nrows)
+    if haskey(handler.config.number_array_fn, column_symbol)
+        handler.config.number_array_fn[column_symbol](nrows)
+    elseif haskey(handler.config.number_array_fn, :_all_)
+        handler.config.number_array_fn[:_all_](nrows)
+    else
+        zeros(Float64, nrows)
     end
 end
 
@@ -1121,7 +1142,7 @@ end
 # Construct Dict object that holds the columns.
 # For date or datetime columns, convert from numeric value to Date/DateTime type column.
 # The resulting dictionary uses column symbols as the key.
-function _chunk_to_dataframe(handler)
+function _chunk_to_dataframe(handler, nrows)
     # println("IN: _chunk_to_dataframe")
     
     n = handler.current_row_in_chunk_index
@@ -1137,7 +1158,8 @@ function _chunk_to_dataframe(handler)
             #if j == 1  && length(bytes) < 100  #debug only
                 # println("  bytes=$bytes")
             #end
-            values = convertfloat64f(bytes, handler.file_endianness)
+            values = createnumarray(handler, name, nrows)
+            convertfloat64f!(values, bytes, handler.file_endianness)
             #println(length(bytes))
             #rslt[name] = bswap(rslt[name])
             rslt[name] = values
@@ -1149,6 +1171,7 @@ function _chunk_to_dataframe(handler)
                     rslt[name] = datetime_from_float(rslt[name])
                 end
             end
+
         elseif ty == column_type_string
             # println("  String: size=$(size(handler.string_chunk))")
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
@@ -1714,6 +1737,7 @@ function Base.show(io::IO, h::Handler)
     println(io, "  page size:   $(h.page_length)")
     println(io, "  pages:       $(h.page_count)")
     println(io, "  rows:        $(h.row_count)")
+    println(io, "  cols:        $(h.column_count)")
 end
 
 

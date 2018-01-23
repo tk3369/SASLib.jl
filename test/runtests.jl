@@ -191,17 +191,33 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
         result = readsas("data_AHS2013/homimp.sas7bdat")
         @test typeof(result[:data][:RAS]) == SASLib.ObjectPool{String,UInt16}
 
+        # string_array_fn test for specific string columns
         result = readsas("data_AHS2013/homimp.sas7bdat", 
             string_array_fn = Dict(:RAS => REGULAR_STR_ARRAY))
         @test typeof(result[:data][:RAS]) == Array{String,1}
+        @test typeof(result[:data][:RAH]) != Array{String,1}
 
+        # string_array_fn test for all string columns
         result = readsas("data_AHS2013/homimp.sas7bdat", 
-        string_array_fn = Dict(:_all_ => REGULAR_STR_ARRAY))
+            string_array_fn = Dict(:_all_ => REGULAR_STR_ARRAY))
         @test typeof(result[:data][:RAS])     == Array{String,1}
         @test typeof(result[:data][:RAH])     == Array{String,1}
         @test typeof(result[:data][:JRAS])    == Array{String,1}
         @test typeof(result[:data][:JRAD])    == Array{String,1}
         @test typeof(result[:data][:CONTROL]) == Array{String,1}
+
+        # number_array_fn test by column name
+        makesharedarray(n) = SharedArray{Float64}(n)
+        result = readsas("data_misc/numeric_1000000_2.sas7bdat", 
+            number_array_fn = Dict(:f => makesharedarray))
+        @test typeof(result[:data][:f]) == SharedArray{Float64,1}
+        @test typeof(result[:data][:x]) == Array{Float64,1}
+
+        # number_array_fn test for all numeric columns
+        result = readsas("data_misc/numeric_1000000_2.sas7bdat", 
+        number_array_fn = Dict(:_all_ => makesharedarray))
+        @test typeof(result[:data][:f]) == SharedArray{Float64,1}
+        @test typeof(result[:data][:x]) == SharedArray{Float64,1}
 
     end
 
