@@ -1691,24 +1691,47 @@ logdebug = println
 #     return d
 # end
 
+# case insensitive column mapping
+Base.lowercase(s::Symbol) = Symbol(lowercase(String(s)))
+case_insensitive_in(s::Symbol, ar::AbstractArray) = 
+    lowercase(s) in [x isa Symbol ? lowercase(x) : x for x in ar]
+
 # fill column indices as a dictionary (key = column index, value = column symbol)
 function _fill_column_indices(handler)
     handler.column_indices = Vector{Tuple{Int64, Symbol, UInt8}}()
     inflag = length(handler.config.include_columns) > 0
     exflag = length(handler.config.exclude_columns) > 0
     inflag && exflag && throw(ConfigError("You can specify either include_columns or exclude_columns but not both."))
+    processed = []
     for j in 1:length(handler.column_symbols)
         name = handler.column_symbols[j]
         if inflag 
-            if j in handler.config.include_columns || name in handler.config.include_columns
+            if j in handler.config.include_columns || 
+                    case_insensitive_in(name, handler.config.include_columns)
                 push!(handler.column_indices, (j, name, handler.column_types[j]))
+                push!(processed, lowercase(name))
             end
         elseif exflag 
-            if !(j in handler.config.exclude_columns || name in handler.config.exclude_columns)
+            if !(j in handler.config.exclude_columns || 
+                    case_insensitive_in(name, handler.config.exclude_columns))
                 push!(handler.column_indices, (j, name, handler.column_types[j]))
+            else
+                push!(processed, lowercase(name))
             end
         else
             push!(handler.column_indices, (j, name, handler.column_types[j]))
+        end
+    end
+    if inflag && length(processed) != length(handler.config.include_columns) 
+        diff = setdiff(handler.config.include_columns, processed)
+        for c in diff
+            warn("Unknown include column $c")
+        end
+    end
+    if exflag && length(processed) != length(handler.config.exclude_columns) 
+        diff = setdiff(handler.config.exclude_columns, processed)
+        for c in diff
+            warn("Unknown exclude column $c")
         end
     end
     # println2(handler, "column_indices = $(handler.column_indices)")
