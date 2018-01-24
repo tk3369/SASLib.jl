@@ -171,7 +171,7 @@ SASLib.close(handler)              # remember to close the handler when done
 
 Note that there is no facility at the moment to jump and read a subset of rows.  Currently, SASLib always read from the beginning.
 
-### String Columns
+### String Column Constructor
 
 By default, string columns are read into a special AbstractArray structure called ObjectPool in order to conserve memory space that might otherwise be wasted for duplicate string values.  SASLib tries to be smart -- when it encounters too many unique values (> 10%) in a large array (> 2000 rows), it falls back to a regular Julia array.
 
@@ -189,7 +189,7 @@ julia> typeof.(collect(values(x[:data])))
  SASLib.ObjectPool{String,UInt16}
 ```
 
-Now, you can force SASLib to use a regular array as such.
+However, you can also force SASLib to use a regular array as such.
 
 ```
 julia> x = readsas("productsales.sas7bdat", include_columns=[:COUNTRY, :REGION],
@@ -213,6 +213,35 @@ julia> typeof.(collect(values(x[:data])))
 2-element Array{DataType,1}:
  Array{String,1}
  Array{String,1}
+```
+
+### Numeric Columns Constructor
+
+In general, SASLib allocates native arrays when returning numerical column data.  However, you can provide a custom constructor so you would be able to either preallcoate the array or construct a different type of array.  The `number_array_fn` parameter is a Dict that maps  column symbols to the custom constructors.  Similar to `string_array_fn`, this Dict may be specified with a special symbol `:_all_` to indicate such constructor be used for all numeric columns.
+
+Example - create SharedArray:
+```
+julia> x = readsas("productsales.sas7bdat", include_columns=[:ACTUAL,:PREDICT], 
+                   number_array_fn=Dict(:ACTUAL => (n)->SharedArray{Float64}(n)));
+Read productsales.sas7bdat with size 1440 x 2 in 1.71426 seconds
+
+julia> x[:column_info]
+2-element Array{Tuple{Int64,Symbol,Symbol,DataType,DataType},1}:
+ (1, :ACTUAL, :Number, Float64, SharedArray{Float64,1})
+ (2, :PREDICT, :Number, Float64, Array{Float64,1})     
+```
+
+Example - preallocate arrays:
+```
+julia> A = zeros(1440, 2);
+
+julia> f1(n) = @view A[:, 1];
+
+julia> f2(n) = @view A[:, 2];
+
+julia> x = readsas("productsales.sas7bdat", include_columns=[:ACTUAL,:PREDICT], 
+              number_array_fn=Dict(:ACTUAL => f1, :PREDICT => f2));
+Read productsales.sas7bdat with size 1440 x 2 in 0.32306 seconds
 ```
 
 ## Why another package?
