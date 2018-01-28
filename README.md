@@ -126,6 +126,8 @@ julia> head(df,5)
 
 ### Inclusion/Exclusion of Columns
 
+**Column Inclusion**
+
 It is always faster to read only the columns that you need.  The `include_columns` argument comes in handy:
 
 ```
@@ -142,6 +144,8 @@ Read data set of size 1440 x 4 in 0.004 seconds
 │ 6   │ 948.0  │ 1993-06-01 │ SOFA    │ 1993.0 │
 ```
 
+**Column Exclusion**
+
 Likewise, you can read all columns except the ones you don't want as specified in `exclude_columns` argument:
 
 ```
@@ -156,6 +160,23 @@ Read data set of size 1440 x 6 in 0.031 seconds
 │ 4   │ CANADA  │ EDUCATION │ 533.0   │ FURNITURE │ 2.0     │ EAST   │
 │ 5   │ CANADA  │ EDUCATION │ 646.0   │ FURNITURE │ 2.0     │ EAST   │
 │ 6   │ CANADA  │ EDUCATION │ 486.0   │ FURNITURE │ 2.0     │ EAST   │
+```
+
+**Case Sensitivity and Column Number**
+
+Column symbols are matched in a case insensitive manner with SAS column names.  
+
+Both `include_columns` and `exclude_columns` accept column number.  In fact, you can mixed column symbols and column numbers as such:
+
+```
+julia> readsas("productsales.sas7bdat", include_columns=[:actual, :predict, 8, 9, 10])[:column_names]
+Read productsales.sas7bdat with size 1440 x 5 in 0.00511 seconds
+5-element Array{String,1}:
+ "ACTUAL" 
+ "PREDICT"
+ "QUARTER"
+ "YEAR"   
+ "MONTH"  
 ```
 
 ### Incremental Reading

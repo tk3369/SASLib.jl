@@ -113,6 +113,16 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
         @test result[:ncols] == 1
         @test sort(result[:column_symbols]) == sort([:ACTUAL])
 
+        # case insensitive include/exclude
+        result = readsas(fname, include_columns=[:month, :Year])
+        @test result[:ncols] == 2
+        result = readsas(fname, exclude_columns=[:diVisiON])
+        @test result[:ncols] == 9
+
+        # bad include/exclude param
+        @test_warn "Unknown include column" readsas(fname, include_columns=[:blah, :Year])
+        @test_warn "Unknown exclude column" readsas(fname, exclude_columns=[:blah, :Year])
+
         # error handling
         @test_throws SASLib.ConfigError readsas(fname, 
             include_columns=[1], exclude_columns=[1])
