@@ -2,7 +2,7 @@
 Strip from the right end of the `bytes` array for any byte that matches the ones
 specified in the `remove` argument.  See Python's bytes.rstrip function.
 """
-function brstrip(bytes::Vector{UInt8}, remove::Vector{UInt8})
+function brstrip(bytes::AbstractVector{UInt8}, remove::AbstractVector{UInt8})
     for i in length(bytes):-1:1
         x = bytes[i]
         found = false
@@ -36,7 +36,7 @@ end
 """
 Find needle in the haystack with both `Vector{UInt8}` type arguments.
 """
-function Base.contains(haystack::Vector{UInt8}, needle::Vector{UInt8})
+function Base.contains(haystack::AbstractVector{UInt8}, needle::AbstractVector{UInt8})
     hlen = length(haystack)
     nlen = length(needle)
     if hlen >= nlen
