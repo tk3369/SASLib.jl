@@ -1,3 +1,4 @@
 julia 0.6
 StringEncodings
 Missings
+Compat 0.37.0

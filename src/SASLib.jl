@@ -2,7 +2,7 @@ __precompile__()
 
 module SASLib
 
-using StringEncodings, Missings
+using StringEncodings, Missings, Compat.Dates
 
 export readsas, REGULAR_STR_ARRAY
 
