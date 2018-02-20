@@ -1,5 +1,5 @@
 using SASLib, Missings
-using Base.Test
+using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat
 
 function getpath(dir, file) 
     path = "$dir/$file"
@@ -119,10 +119,17 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
         result = readsas(fname, exclude_columns=[:diVisiON])
         @test result[:ncols] == 9
 
-        # bad include/exclude param
-        @test_warn "Unknown include column" readsas(fname, include_columns=[:blah, :Year])
-        @test_warn "Unknown exclude column" readsas(fname, exclude_columns=[:blah, :Year])
-
+        # test bad include/exclude param
+        # see https://discourse.julialang.org/t/test-warn-doesnt-work-with-warn-in-0-7/9001
+        @static if VERSION.minor < 7
+            @test_warn "Unknown include column" readsas(fname, include_columns=[:blah, :Year])
+            @test_warn "Unknown exclude column" readsas(fname, exclude_columns=[:blah, :Year])
+        else
+            Compat.Test.@test_logs (:warn, "Unknown include column blah") (:warn, 
+                "Unknown include column Year") readsas(fname, include_columns=[:blah, :Year])
+            Compat.Test.@test_logs (:warn, "Unknown exclude column blah") (:warn, 
+                "Unknown exclude column Year") readsas(fname, exclude_columns=[:blah, :Year])
+        end
         # error handling
         @test_throws SASLib.ConfigError readsas(fname, 
             include_columns=[1], exclude_columns=[1])

@@ -2,7 +2,7 @@ __precompile__()
 
 module SASLib
 
-using StringEncodings, Missings, Compat.Dates
+using StringEncodings, Missings, Compat.Dates, Compat.Distributed, Compat
 
 export readsas, REGULAR_STR_ARRAY
 
@@ -179,9 +179,8 @@ read the entire file content.  When called again, fetch the next `nrows` rows.
 """
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
-    tic()
-    result = read_chunk(handler, nrows)
-    elapsed = round(toq(), 5)
+    elapsed = @elapsed result = read_chunk(handler, nrows)
+    elapsed = round(elapsed, 5)
     println1(handler, "Read $(handler.config.filename) with size $(result[:nrows]) x $(result[:ncols]) in $elapsed seconds")
     return result
 end
@@ -288,14 +287,14 @@ end
 @inline function _read_int(handler, offset, width)
     b = _read_bytes(handler, offset, width)
     width == 1 ? Int64(b[1]) : 
-        (handler.file_endianness == :BigEndian? convertint64B(b...) : convertint64L(b...))
+        (handler.file_endianness == :BigEndian ? convertint64B(b...) : convertint64L(b...))
 end
 
 @inline function _read_bytes(handler, offset, len)
     return handler.cached_page[offset+1:offset+len]  #offset is 0-based
     # => too conservative.... we expect cached_page to be filled before this function is called
     # if handler.cached_page == []
-    #     warn("_read_byte function going to disk")
+    #     Compat.@warn("_read_byte function going to disk")
     #     seek(handler.io, offset)
     #     try
     #         return Base.read(handler.io, len)
@@ -384,14 +383,14 @@ function _get_properties(handler)
     else
         handler.file_encoding = FALLBACK_ENCODING         # hope for the best
         handler.config.verbose_level > 0 &&  
-            warn("Unknown file encoding value ($buf), defaulting to $(handler.file_encoding)")
+            Compat.@warn("Unknown file encoding value ($buf), defaulting to $(handler.file_encoding)")
     end
     #println2(handler, "file_encoding = $(handler.file_encoding)")
 
     # User override for encoding
     if handler.config.encoding != ""
         handler.config.verbose_level > 0 && 
-            warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
+            Compat.@warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
         handler.file_encoding = handler.config.encoding
     end
     # println2(handler, "Final encoding = $(handler.file_encoding)")
@@ -427,13 +426,13 @@ function _get_properties(handler)
     handler.file_type = transcode_metadata(brstrip(buf, zero_space))
 
     # Timestamp is epoch 01/01/1960
-    const epoch = DateTime(1960, 1, 1, 0, 0, 0)
+    epoch = DateTime(1960, 1, 1, 0, 0, 0)
     x = _read_float(handler, date_created_offset + align1, date_created_length)
-    handler.date_created = epoch + Base.Dates.Millisecond(round(x * 1000))
+    handler.date_created = epoch + Millisecond(round(x * 1000))
     # println("date created = $(x) => $(handler.date_created)")
 
     x = _read_float(handler, date_modified_offset + align1, date_modified_length)
-    handler.date_modified = epoch + Base.Dates.Millisecond(round(x * 1000))
+    handler.date_modified = epoch + Millisecond(round(x * 1000))
     # println("date modified = $(x) => $(handler.date_modified)")
     
     handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
@@ -706,7 +705,7 @@ function _process_columnsize_subheader(handler, offset, length)
     offset += int_len
     handler.column_count = _read_int(handler, offset, int_len)
     if (handler.col_count_p1 + handler.col_count_p2 != handler.column_count)
-        warn("Warning: column count mismatch ($(handler.col_count_p1) + $(handler.col_count_p2) != $(handler.column_count))")
+        Compat.@warn("Warning: column count mismatch ($(handler.col_count_p1) + $(handler.col_count_p2) != $(handler.column_count))")
     end
 end
 
@@ -939,7 +938,7 @@ function read_chunk(handler, nrows=0)
     # println("nrows = $nrows")
 
     if !isdefined(handler, :column_types)
-        warn("No columns to parse from file")
+        Compat.@warn("No columns to parse from file")
         return nullresult(handler.config.filename)
     end
     # println("column_types = $(handler.column_types)")
@@ -986,13 +985,9 @@ function read_chunk(handler, nrows=0)
     # handler.current_page = 0
     handler.current_row_in_chunk_index = 0
     
-    tic()
-    read_data(handler, nrows)
-    perf_read_data = toq()
+    perf_read_data = @elapsed read_data(handler, nrows)
 
-    tic()
-    rslt = _chunk_to_dataframe(handler, nrows)
-    perf_chunk_to_data_frame = toq()
+    perf_chunk_to_data_frame = @elapsed rslt = _chunk_to_dataframe(handler, nrows)
 
     # here column symbols contains only ones for columns that are actually read
     column_symbols = [sym for (k, sym, ty) in handler.column_indices]
@@ -1036,15 +1031,14 @@ function createstrarray(handler, column_symbol, nrows)
     elseif haskey(handler.config.string_array_fn, :_all_)
         handler.config.string_array_fn[:_all_](nrows)
     else
-        ty = String
         if nrows <= 2 << 7 
-            ObjectPool{Type(ty), UInt8}(EMPTY_STRING, nrows)
+            ObjectPool{String, UInt8}(EMPTY_STRING, nrows)
         elseif nrows <= 2 << 15
-            ObjectPool{Type(ty), UInt16}(EMPTY_STRING, nrows)
+            ObjectPool{String, UInt16}(EMPTY_STRING, nrows)
         elseif nrows <= 2 << 31
-            ObjectPool{Type(ty), UInt32}(EMPTY_STRING, nrows)
+            ObjectPool{String, UInt32}(EMPTY_STRING, nrows)
         else
-            ObjectPool{Type(ty), UInt64}(EMPTY_STRING, nrows)
+            ObjectPool{String, UInt64}(EMPTY_STRING, nrows)
         end
     end
 end
@@ -1123,7 +1117,7 @@ end
 
 # convert Float64 value into Date object 
 function date_from_float(x::Vector{Float64})
-    v = Vector{Union{Date, Missing}}(length(x))
+    @compat v = Vector{Union{Date, Missing}}(uninitialized, length(x))
     for i in 1:length(x)
         v[i] = isnan(x[i]) ? missing : (sas_date_origin + Dates.Day(round(Int64, x[i])))
     end
@@ -1132,7 +1126,7 @@ end
 
 # convert Float64 value into DateTime object 
 function datetime_from_float(x::Vector{Float64})
-    v = Vector{Union{DateTime, Missing}}(length(x))
+    @compat v = Vector{Union{DateTime, Missing}}(uninitialized, length(x))
     for i in 1:length(x)
         v[i] = isnan(x[i]) ? missing : (sas_datetime_origin + Dates.Second(round(Int64, x[i])))
     end
@@ -1431,7 +1425,7 @@ end
 # Use custom decode_string function with our own decoder/decoder buffer to avoid unncessary objects creation
 @inline transcode_data(handler::Handler, source::Vector{UInt8}, startidx::Int64, endidx::Int64, lngt::Int64) = 
     handler.use_base_transcoder || seven_bit_data(source, startidx, endidx) ? 
-        unsafe_string(pointer(source) + startidx - 1, lngt): 
+        unsafe_string(pointer(source) + startidx - 1, lngt) : 
         decode_string(source, startidx, endidx, handler.string_decoder_buffer, handler.string_decoder)
         #decode_string2(source[startidx:endidx], handler.file_encoding)
 
@@ -1578,13 +1572,10 @@ end
 # http://collaboration.cmc.ec.gc.ca/science/rpn/biblio/ddj/Website/articles/CUJ/1992/9210/ross/ross.htm
 function rdc_decompress(result_length, inbuff::Vector{UInt8})
 
-    #uint8_t cmd
-    #uint16_t ctrl_bits, ofs, cnt
+	ctrl_bits = UInt16(0)
     ctrl_mask = UInt16(0)
     ipos = 1
     rpos = 1
-    #k
-    #uint8_t [:] outbuff = np.zeros(result_length, dtype=np.uint8)
     outbuff = zeros(UInt8, result_length)
 
     while ipos <= length(inbuff)
@@ -1725,13 +1716,13 @@ function _fill_column_indices(handler)
     if inflag && length(processed) != length(handler.config.include_columns) 
         diff = setdiff(handler.config.include_columns, processed)
         for c in diff
-            warn("Unknown include column $c")
+            Compat.@warn("Unknown include column $c")
         end
     end
     if exflag && length(processed) != length(handler.config.exclude_columns) 
         diff = setdiff(handler.config.exclude_columns, processed)
         for c in diff
-            warn("Unknown exclude column $c")
+            Compat.@warn("Unknown exclude column $c")
         end
     end
     # println2(handler, "column_indices = $(handler.column_indices)")

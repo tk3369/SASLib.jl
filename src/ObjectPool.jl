@@ -36,7 +36,7 @@ function ObjectPool{T, S}(val::T, n::Integer) where {T, S <: Unsigned}
 end
 
 # If the value already exist in the pool then just the index value is stored.
-function Base.setindex!{T}(op::ObjectPool, val::T, i::Integer)
+function Base.setindex!(op::ObjectPool, val::T, i::Integer) where T
     if haskey(op.indexcache, val)
         # The value `val` already exists in the cache.  
         # Just set the array element to the index value from cache.
