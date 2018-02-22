@@ -62,7 +62,7 @@ end
 # Base.IndexStyle(::Type{<:ObjectPool}) = IndexLinear()
 
 # single indexing
-Base.getindex(op::ObjectPool, i::Number) = op.pool[op.idx[convert(Int, i)]]
+Base.getindex(op::ObjectPool, i::Integer) = op.pool[op.idx[convert(Int, i)]]
 
 # general sizes
 Base.size(op::ObjectPool)   = (op.itemscount, )
