@@ -1,5 +1,19 @@
 export metadata
 
+"""
+Metadata contains information about a SAS data file.
+
+*Fields*
+- `filename`: file name/path of the SAS data set
+- `encoding`: file encoding e.g. "ISO8859-1"
+- `endianness`: either `:LittleEndian`` or `:BigEndian`
+- `compression`: could be `:RLE`, `:RDC`, or `:none`
+- `pagesize`: size of each data page in bytes
+- `npages`: number of pages in the file
+- `nrows`: number of data rows in the file
+- `ncols`: number of data columns in the file
+- `columnsinfo`: vector of column symbols and their respective types (Float64 or String)
+"""
 struct Metadata
     filename::AbstractString
     encoding::AbstractString          # e.g. "ISO8859-1"
@@ -29,4 +43,14 @@ function metadata(h::Handler)
         h.column_count,
         ci
     )
+end
+
+function metadata(fname::AbstractString)
+    local h
+    try
+        h = SASLib.open(fname)
+        metadata(h)
+    finally
+        SASLib.close(h)
+    end
 end

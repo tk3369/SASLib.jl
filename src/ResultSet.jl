@@ -20,17 +20,16 @@ interface as well as the IterableTables.jl interface.
 
 *Single Row/Column Indexing*
 - `rs[i]` returns a tuple for row `i`
-- `rs[:c]` returns a vector for column with symbol `c`
+- `rs[:c]` returns a vector for column `c`
 
-*Multi Row/Column Indexing*
+*Multiple Row/Column Indexing*
 - `rs[i:j]` returns a view of ResultSet with rows between `i` and `j`
-- `rs[c...]` returns a view of ResultSet with columns specified
+- `rs[:c...]` returns a view of ResultSet with columns specified e.g. `rs[:A, :B]`
 
 *Cell Indexing*
 - `rs[i,j]` returns a single value for row `i` column `j`
-- `rs[i,c]` returns a single value for row `i` column symbol `c`
-- Specific cell can be assigned with the above indexing methods
-
+- `rs[i,:c]` returns a single value for row `i` column `c`
+- Specific cell can be assigned using the above indexing methods
 """
 struct ResultSet
     columns::AbstractVector{AbstractVector}
