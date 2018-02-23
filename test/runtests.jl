@@ -60,7 +60,7 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
             Base.Filesystem.readdir("$dir"))
         for f in files
             result = readfile(dir, f)
-            @test (result[:nrows], result[:ncols]) == (10, 100)
+            @test size(result) == (10, 100)
         end
     end
 
@@ -68,56 +68,54 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
         handler = openfile("data_pandas", "test1.sas7bdat")
         @test handler.config.filename == "data_pandas/test1.sas7bdat"
         result = SASLib.read(handler, 3)  # read 3 rows
-        @test result[:nrows] == 3
+        @test size(result, 1) == 3
         result = SASLib.read(handler, 4)  # read 4 rows
-        @test result[:nrows] == 4
+        @test size(result, 1) == 4
         result = SASLib.read(handler, 5)  # should read only 3 rows even though we ask for 5
-        @test result[:nrows] == 3
+        @test size(result, 1)  == 3
     end
 
     @testset "various data types" begin
-        result = readfile("data_pandas", "test1.sas7bdat")
-        df = result[:data]
-        @test sum(df[:Column1][1:5]) == 2.066
-        @test count(isnan, df[:Column1]) == 1
-        @test df[:Column98][1:3] == [ "apple", "dog", "pear" ]
-        @test df[:Column4][1:3] == [Date("1965-12-10"), Date("1977-03-07"), Date("1983-08-15")]
+        rs = readfile("data_pandas", "test1.sas7bdat")
+        @test sum(rs[:Column1][1:5]) == 2.066
+        @test count(isnan, rs[:Column1]) == 1
+        @test rs[:Column98][1:3] == [ "apple", "dog", "pear" ]
+        @test rs[:Column4][1:3] == [Date("1965-12-10"), Date("1977-03-07"), Date("1983-08-15")]
     end
 
     @testset "datetime with missing values" begin
-        result = readfile("data_pandas", "datetime.sas7bdat")
-        df = result[:data]
-        @test (result[:nrows], result[:ncols]) == (5, 4)
-        @test result[:data][:mtg][1] == Date(2017, 11, 24)
-        @test result[:data][:dt][5] == DateTime(2018, 3, 31, 14, 20, 33)
-        @test count(ismissing, result[:data][:mtg]) == 1
-        @test count(ismissing, result[:data][:dt]) == 3
+        rs = readfile("data_pandas", "datetime.sas7bdat")
+        @test size(rs) == (5, 4)
+        @test rs[:mtg][1] == Date(2017, 11, 24)
+        @test rs[:dt][5] == DateTime(2018, 3, 31, 14, 20, 33)
+        @test count(ismissing, rs[:mtg]) == 1
+        @test count(ismissing, rs[:dt]) == 3
     end
 
     @testset "include/exclude columns" begin
         fname = getpath("data_pandas", "productsales.sas7bdat")
 
-        result = readsas(fname, include_columns=[:MONTH, :YEAR])
-        @test result[:ncols] == 2
-        @test sort(result[:column_symbols]) == sort([:MONTH, :YEAR])
+        rs = readsas(fname, include_columns=[:MONTH, :YEAR])
+        @test size(rs, 2) == 2
+        @test sort(names(rs)) == sort([:MONTH, :YEAR])
         
-        result = readsas(fname, include_columns=[1, 2, 7])
-        @test result[:ncols] == 3
-        @test sort(result[:column_symbols]) == sort([:ACTUAL, :PREDICT, :PRODUCT])
+        rs = readsas(fname, include_columns=[1, 2, 7])
+        @test size(rs, 2) == 3
+        @test sort(names(rs)) == sort([:ACTUAL, :PREDICT, :PRODUCT])
 
-        result = readsas(fname, exclude_columns=[:DIVISION])
-        @test result[:ncols] == 9
-        @test !(:DIVISION in result[:column_symbols])
+        rs = readsas(fname, exclude_columns=[:DIVISION])
+        @test size(rs, 2) == 9
+        @test !(:DIVISION in names(rs))
 
-        result = readsas(fname, exclude_columns=collect(2:10))
-        @test result[:ncols] == 1
-        @test sort(result[:column_symbols]) == sort([:ACTUAL])
+        rs = readsas(fname, exclude_columns=collect(2:10))
+        @test size(rs, 2) == 1
+        @test sort(names(rs)) == sort([:ACTUAL])
 
         # case insensitive include/exclude
-        result = readsas(fname, include_columns=[:month, :Year])
-        @test result[:ncols] == 2
-        result = readsas(fname, exclude_columns=[:diVisiON])
-        @test result[:ncols] == 9
+        rs = readsas(fname, include_columns=[:month, :Year])
+        @test size(rs, 2) == 2
+        rs = readsas(fname, exclude_columns=[:diVisiON])
+        @test size(rs, 2) == 9
 
         # test bad include/exclude param
         # see https://discourse.julialang.org/t/test-warn-doesnt-work-with-warn-in-0-7/9001
@@ -136,50 +134,44 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
     end
 
     @testset "misc" begin
-        result = readfile("data_pandas", "productsales.sas7bdat")
-        df = result[:data]
-		@test result[:ncols] == 10
-		@test result[:nrows] == 1440
-		@test result[:page_length] == 8192
-		@test sum(df[:ACTUAL]) ≈ 730337.0
+        rs = readfile("data_pandas", "productsales.sas7bdat")
+		@test size(rs) == (1440, 10)
+#		@test result[:page_length] == 8192
+		@test sum(rs[:ACTUAL]) ≈ 730337.0
         handler = openfile("data_AHS2013", "topical.sas7bdat")
         @test show(handler) == nothing
     end
 
     @testset "stat_transfer" begin
-        result = readfile("data_misc", "types.sas7bdat")
-        df = result[:data]
-        @test sum(df[:vbyte][1:2])   == 9
-        @test sum(df[:vint][1:2])    == 9
-        @test sum(df[:vlong][1:2])   == 9
-        @test sum(df[:vfloat][1:2])  ≈  10.14000010
-        @test sum(df[:vdouble][1:2]) ≈  10.14000000
+        rs = readfile("data_misc", "types.sas7bdat")
+        @test sum(rs[:vbyte][1:2])   == 9
+        @test sum(rs[:vint][1:2])    == 9
+        @test sum(rs[:vlong][1:2])   == 9
+        @test sum(rs[:vfloat][1:2])  ≈  10.14000010
+        @test sum(rs[:vdouble][1:2]) ≈  10.14000000
     end
 
     # topical.sas7bdat contains columns labels which should be ignored anywas
     @testset "AHS2013" begin
         handler = openfile("data_AHS2013", "topical.sas7bdat")
-        result = SASLib.read(handler, 1000)
+        rs = SASLib.read(handler, 1000)
         SASLib.close(handler)
-        df = result[:data]
-		@test result[:ncols] == 114
-		@test result[:nrows] == 1000
-		@test result[:page_count] == 10
-        @test result[:page_length] == 16384
-        @test result[:system_endianness] == :LittleEndian
-        @test count(x -> x == "B", df[:DPEVVEHIC]) == 648
-        @test mean(filter(!isnan, df[:PTCOSTGAS])) ≈ 255.51543209876544
+		@test size(rs) == (1000, 114)
+		# @test result[:page_count] == 10
+        # @test result[:page_length] == 16384
+        # @test result[:system_endianness] == :LittleEndian
+        @test count(x -> x == "B", rs[:DPEVVEHIC]) == 648
+        @test mean(filter(!isnan, rs[:PTCOSTGAS])) ≈ 255.51543209876544
     end
 
     @testset "file encodings" begin
-        result = readfile("data_reikoch", "extr.sas7bdat")
-        df = result[:data]
-        @test result[:file_encoding] == "CP932"
-        @test df[:AETXT][1] == "眠気"
+        rs = readfile("data_reikoch", "extr.sas7bdat")
+        # @test result[:file_encoding] == "CP932"
+        @test rs[:AETXT][1] == "眠気"
 
-        result = readfile("data_pandas", "test1.sas7bdat", encoding = "US-ASCII")
-        @test result[:file_encoding] == "US-ASCII"
-        @test result[:data][:Column42][3] == "dog"
+        rs = readfile("data_pandas", "test1.sas7bdat", encoding = "US-ASCII")
+        # @test result[:file_encoding] == "US-ASCII"
+        @test rs[:Column42][3] == "dog"
     end
 
     @testset "handler object" begin
@@ -205,36 +197,36 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
 
     @testset "array constructors" begin
         
-        result = readsas("data_AHS2013/homimp.sas7bdat")
-        @test typeof(result[:data][:RAS]) == SASLib.ObjectPool{String,UInt16}
+        rs = readsas("data_AHS2013/homimp.sas7bdat")
+        @test typeof(rs[:RAS]) == SASLib.ObjectPool{String,UInt16}
 
         # string_array_fn test for specific string columns
-        result = readsas("data_AHS2013/homimp.sas7bdat", 
+        rs = readsas("data_AHS2013/homimp.sas7bdat", 
             string_array_fn = Dict(:RAS => REGULAR_STR_ARRAY))
-        @test typeof(result[:data][:RAS]) == Array{String,1}
-        @test typeof(result[:data][:RAH]) != Array{String,1}
+        @test typeof(rs[:RAS]) == Array{String,1}
+        @test typeof(rs[:RAH]) != Array{String,1}
 
         # string_array_fn test for all string columns
-        result = readsas("data_AHS2013/homimp.sas7bdat", 
+        rs = readsas("data_AHS2013/homimp.sas7bdat", 
             string_array_fn = Dict(:_all_ => REGULAR_STR_ARRAY))
-        @test typeof(result[:data][:RAS])     == Array{String,1}
-        @test typeof(result[:data][:RAH])     == Array{String,1}
-        @test typeof(result[:data][:JRAS])    == Array{String,1}
-        @test typeof(result[:data][:JRAD])    == Array{String,1}
-        @test typeof(result[:data][:CONTROL]) == Array{String,1}
+        @test typeof(rs[:RAS])     == Array{String,1}
+        @test typeof(rs[:RAH])     == Array{String,1}
+        @test typeof(rs[:JRAS])    == Array{String,1}
+        @test typeof(rs[:JRAD])    == Array{String,1}
+        @test typeof(rs[:CONTROL]) == Array{String,1}
 
         # number_array_fn test by column name
         makesharedarray(n) = SharedArray{Float64}(n)
-        result = readsas("data_misc/numeric_1000000_2.sas7bdat", 
+        rs = readsas("data_misc/numeric_1000000_2.sas7bdat", 
             number_array_fn = Dict(:f => makesharedarray))
-        @test typeof(result[:data][:f]) == SharedArray{Float64,1}
-        @test typeof(result[:data][:x]) == Array{Float64,1}
+        @test typeof(rs[:f]) == SharedArray{Float64,1}
+        @test typeof(rs[:x]) == Array{Float64,1}
 
         # number_array_fn test for all numeric columns
-        result = readsas("data_misc/numeric_1000000_2.sas7bdat", 
+        rs = readsas("data_misc/numeric_1000000_2.sas7bdat", 
         number_array_fn = Dict(:_all_ => makesharedarray))
-        @test typeof(result[:data][:f]) == SharedArray{Float64,1}
-        @test typeof(result[:data][:x]) == SharedArray{Float64,1}
+        @test typeof(rs[:f]) == SharedArray{Float64,1}
+        @test typeof(rs[:x]) == SharedArray{Float64,1}
 
     end
 
@@ -243,8 +235,8 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
             for f in readdir(dir)
                 if endswith(f, ".sas7bdat") && 
                         !(f in ["zero_variables.sas7bdat"])
-                    result = readfile(dir, f)
-                    @test result[:nrows] > 0
+                    rs = readfile(dir, f)
+                    @test size(rs, 1) > 0
                 end
             end
         end
