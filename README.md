@@ -331,7 +331,7 @@ SASLib.Metadata("productsales.sas7bdat", "US-ASCII", :LittleEndian, :none, 8192,
 
 It's OK to access the fields directly.
 ```julia
-julia> fieldnames(md)
+julia> fieldnames(SASLib.Metadata)
 9-element Array{Symbol,1}:
  :filename   
  :encoding   
@@ -342,6 +342,9 @@ julia> fieldnames(md)
  :nrows      
  :ncols      
  :columnsinfo
+
+julia> md.nrows
+1440
 ```
 
 If you already have a `SASLib.Handler` object from the `SASLib.open` call, you can get metadata directly from the handler:
@@ -351,19 +354,17 @@ julia> metadata(handler)
 SASLib.Metadata("productsales.sas7bdat", "US-ASCII", :LittleEndian, :none, 8192, 18, 1440, 10, Pair{Symbol,DataType}[:ACTUAL=>Float64, :PREDICT=>Float64, :COUNTRY=>String, :REGION=>String, :DIVISION=>String, :PRODTYPE=>String, :PRODUCT=>String, :QUARTER=>Float64, :YEAR=>Float64, :MONTH=>Float64])
 ```
 
-## Why another package?
+## Related Packages
 
-At first, I was just going to use [ReadStat.jl](https://github.com/davidanthoff/ReadStat.jl), which uses the [ReadStat C-library](https://github.com/WizardMac/ReadStat).  However, ReadStat does not support reading RDC-compressed binary files.  I could have chosen to contribute to that project but I would rather learn and code in Julia instead ;-)  
+[ReadStat.jl](https://github.com/davidanthoff/ReadStat.jl) uses the [ReadStat C-library](https://github.com/WizardMac/ReadStat).  However, ReadStat-C does not support reading RDC-compressed binary files.
 
-This project started out as a port of Pandas' read_sas function.  Since the first public release, several bugs have been fixed and additional features have been added e.g. reading a subset of columns.  The implementation in Pandas is fairly straightforward, making it a relatively easy porting project.  
+[StatFiles.jl](https://github.com/davidanthoff/StatFiles.jl) is a higher-level package built on top of ReadStat.jl and implements the [FileIO](https://github.com/JuliaIO/FileIO.jl) interface.
 
-## Porting Notes
-
-I chose to copy the code from Pandas and made minimal changes so I can have a working version quickly.  Hence, the code isn't very Julia-friendly e.g. variable and function naming are all mixed up.  It is not a priority at this point but I would think some major refactoring would be required to clean up the code.
+[Python Pandas](https://github.com/pandas-dev/pandas) package has an implementation of SAS file reader that SASLib borrows heavily from.
 
 ## Credits
 
-- Jared Hobbs, the author of the SAS reader code from Python Pandas.  See LICENSE_SAS7BDAT.md.
+- Jared Hobbs, the author of the SAS reader code from Pandas.  See LICENSE_SAS7BDAT.md.
 - [Evan Miller](https://github.com/evanmiller), the author of ReadStat C/C++ library.  See LICENSE_READSTAT.md.
 - [David Anthoff](https://github.com/davidanthoff), who provided many valuable ideas at the early stage of development.
 - [Tyler Beason](https://github.com/tbeason)
