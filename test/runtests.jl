@@ -153,6 +153,9 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
         @test typeof(rs[:ACTUAL]) == Array{Float64,1}
         @test sum(rs[:ACTUAL]) ≈ 730337.0
 
+        # iteration
+        @test sum(r[1] for r in rs) ≈ 730337.0
+        
         # portion of result set
         @test typeof(rs[1:2]) == SASLib.ResultSet
         @test typeof(rs[:ACTUAL, :PREDICT]) == SASLib.ResultSet
