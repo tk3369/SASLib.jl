@@ -925,18 +925,6 @@ function nullresult(filename)
     )
 end
 
-function compressionstring(handler)
-    if handler.compression == compression_method_none 
-        "None" 
-    elseif handler.compression == compression_method_rdc
-        "RDC"
-    elseif handler.compression == compression_method_rle
-        "RLE"
-    else
-        "Unknown"
-    end
-end
-
 function _read_next_page_content(handler)
     # println3(handler, "IN: _read_next_page_content")
     # println3(handler, "  positions = $(concatenate(stringarray(currentpos(handler))))")
