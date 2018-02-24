@@ -14,9 +14,11 @@ basename = split(file, "/")[end]
 shortname = replace(basename, r"\.sas7bdat", "")
 output = "$dir/py_jl_$(shortname)_$(cnt).md"
 
+prt(msg...) = info(now(), " ", msg...)
+
 # run python part
 # result is minimum time in seconds
-info("Running python test")
+prt("Running python test for file ", file, " ", cnt, " times")
 pyver_cmd = `python -V`
 pyres_cmd = `python perf_test1.py $file $cnt`
 pyver = readstring(pipeline(pyver_cmd, stderr=pipeline(`cat`)))
@@ -24,21 +26,21 @@ pyres = readstring(pipeline(pyres_cmd))
 py = parse(Float64, match(r"[0-9]*\.[0-9]*", pyres).match) 
 
 # read metadata
-info("Reading metadata of data file")
-meta = readsas(file, verbose_level = 0)
-nrows = meta[:nrows]
-ncols = meta[:ncols]
-nnumcols = length(filter(x -> x[3] == :Number,meta[:column_info]))
+prt("Reading metadata of data file")
+meta = metadata(file)
+nrows = meta.nrows
+ncols = meta.ncols
+nnumcols = count(x -> x == Float64, [ty for (name, ty) in meta.columnsinfo])
 nstrcols = ncols - nnumcols
 
 # run julia part
-info("Running julia test")
+prt("Running julia test")
 jlb1 = @benchmark readsas(file, verbose_level=0) samples=parse(Int, cnt)
 jl1 = jlb1.times[1] / 1e9   # convert nanoseconds to seconds
 
 # run julia part using regular string array
 if nstrcols > 0
-    info("Running julia test (regular string array)")
+    prt("Running julia test (regular string array)")
     jlb2 = @benchmark readsas(file, string_array_fn=Dict(:_all_=>REGULAR_STR_ARRAY), 
         verbose_level=0) samples=parse(Int, cnt)
     jl2 = jlb2.times[1] / 1e9   # convert nanoseconds to seconds
@@ -98,4 +100,4 @@ catch err
 finally
     io != nothing && try close(io) catch e println(e) end
 end
-info("Written file $output")
+prt("Written file $output")
