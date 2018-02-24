@@ -1604,17 +1604,6 @@ function _determine_vendor(handler::Handler)
     end
 end
 
-function Base.show(io::IO, h::Handler)
-    println(io, "SASLib.Handler:")
-    println(io, "  filename:    $(h.config.filename)")
-    println(io, "  encoding:    $(h.file_encoding)")
-    println(io, "  platform:    $(h.sas_release) (", h.U64 ? "64" : "32", "-bit)")
-    println(io, "  endianness:  $(h.file_endianness)")
-    println(io, "  page size:   $(h.page_length)")
-    println(io, "  pages:       $(h.page_count)")
-    println(io, "  rows:        $(h.row_count)")
-    println(io, "  cols:        $(h.column_count)")
-end
-
+Base.show(io::IO, h::Handler) = print(io, "SASLib.Handler[", h.config.filename, "]")
 
 end # module
