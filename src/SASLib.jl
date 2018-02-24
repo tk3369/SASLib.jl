@@ -816,6 +816,17 @@ end
 
 function read_chunk(handler, nrows=0)
 
+    if !isdefined(handler, :column_types)
+        Compat.@warn("No columns to parse from file")
+        return SASLib.ResultSet()
+    end
+    # println("column_types = $(handler.column_types)")
+
+    if handler.row_count == 0
+        Compat.@warn("File has no data")
+        return SASLib.ResultSet()
+    end
+    
     # println("IN: read_chunk")
     #println(handler.config)
     if (nrows == 0) && (handler.config.chunk_size > 0)
@@ -824,17 +835,6 @@ function read_chunk(handler, nrows=0)
         nrows = handler.row_count
     end
     # println("nrows = $nrows")
-
-    if !isdefined(handler, :column_types)
-        Compat.@warn("No columns to parse from file")
-        return nullresult(handler.config.filename)
-    end
-    # println("column_types = $(handler.column_types)")
-    
-    # println("current_row_in_file_index = $(handler.current_row_in_file_index)")    
-    if handler.current_row_in_file_index >= handler.row_count
-        error("Bug: $(handler.current_row_in_file_index) >= $(handler.row_count)")
-    end
 
     # println("row_count = $(handler.row_count)")    
     m = handler.row_count - handler.current_row_in_file_index
@@ -914,15 +914,6 @@ function createnumarray(handler, column_symbol, nrows)
     else
         zeros(Float64, nrows)
     end
-end
-
-function nullresult(filename)
-    Dict(
-        :data => Dict(), 
-        :nrows => 0, 
-        :ncols => 0, 
-        :filename => filename
-    )
 end
 
 function _read_next_page_content(handler)

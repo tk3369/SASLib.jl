@@ -1,4 +1,4 @@
-using IteratorInterfaceExtensions, TableTraits, TableTraitsUtils
+#using IteratorInterfaceExtensions, TableTraits, TableTraitsUtils
 
 import Base.size
 
@@ -35,6 +35,8 @@ struct ResultSet
     columns::AbstractVector{AbstractVector}
     names::AbstractVector{Symbol}
     size::NTuple{2, Int}
+    ResultSet() = new([], [], (0,0))  # special case
+    ResultSet(c,n,s) = new(c, n, s)
 end
 
 # exports
@@ -94,6 +96,7 @@ function Base.show(io::IO, rs::ResultSet)
     max_cols = 10
     n = min(size(rs, 1), max_rows)
     m = min(size(rs, 2), max_cols)
+    (n < 1 || m < 1) && return
     print(io, "Columns ")
     for i in 1:m
         i > 1 && print(io, ", ")
@@ -113,10 +116,10 @@ function Base.show(io::IO, rs::ResultSet)
 end
 
 # IteratableTables
-IteratorInterfaceExtensions.isiterable(::ResultSet) = true
+# IteratorInterfaceExtensions.isiterable(::ResultSet) = true
 
-TableTraits.isiterabletable(::ResultSet) = true
+# TableTraits.isiterabletable(::ResultSet) = true
 
-function IteratorInterfaceExtensions.getiterator(rs::ResultSet)
-    TableTraitsUtils.create_tableiterator(rs.columns, rs.names)
-end
+# function IteratorInterfaceExtensions.getiterator(rs::ResultSet)
+#     TableTraitsUtils.create_tableiterator(rs.columns, rs.names)
+# end
