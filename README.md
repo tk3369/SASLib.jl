@@ -15,7 +15,7 @@ Pkg.add("SASLib")
 
 ## Read Performance
 
-I did benchmarking mostly on my Macbook Pro laptop.  In general, the Julia implementation is somewhere between 7-25x faster than the Python counterpart.  Test results are documented in the `test/perf_results_<version>` folders.
+I did benchmarking mostly on my Macbook Pro laptop.  In general, the Julia implementation is somewhere between 10-100x faster than the Python counterpart.  Test results are documented in the `test/perf_results_<version>` folders.
 
 ## User Guide
 
@@ -366,5 +366,7 @@ I chose to copy the code from Pandas and made minimal changes so I can have a wo
 - Jared Hobbs, the author of the SAS reader code from Python Pandas.  See LICENSE_SAS7BDAT.md.
 - [Evan Miller](https://github.com/evanmiller), the author of ReadStat C/C++ library.  See LICENSE_READSTAT.md.
 - [David Anthoff](https://github.com/davidanthoff), who provided many valuable ideas at the early stage of development.
+- [Tyler Beason](https://github.com/tbeason)
+- [susabi](https://github.com/xiaodaigh)
 
 I also want to thank all the active members at the [Julia Discourse community](https://discourse.julialang.org).  This project wouldn't be possible without all the help I got from the community.  That's the beauty of open-source development.
