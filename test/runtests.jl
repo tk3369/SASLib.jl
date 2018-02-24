@@ -133,13 +133,56 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
             include_columns=[1], exclude_columns=[1])
     end
 
-    @testset "misc" begin
+    @testset "ResultSet" begin
         rs = readfile("data_pandas", "productsales.sas7bdat")
-		@test size(rs) == (1440, 10)
-#		@test result[:page_length] == 8192
-		@test sum(rs[:ACTUAL]) ≈ 730337.0
-        handler = openfile("data_AHS2013", "topical.sas7bdat")
-        @test show(handler) == nothing
+
+        # metadata for result set
+        @test size(rs) == (1440, 10)
+        @test size(rs,1) == 1440
+        @test size(rs,2) == 10
+        @test length(columns(rs)) == 10 
+        @test length(names(rs)) == 10 
+
+        # cell indexing
+        @test rs[1][1] ≈ 925.0
+        @test rs[1,1] ≈ 925.0
+        @test rs[1,:ACTUAL] ≈ 925.0
+
+        # row/column indexing
+        @test typeof(rs[1]) == Tuple{Float64,Float64,String,String,String,String,String,Float64,Float64,Date}
+        @test typeof(rs[:ACTUAL]) == Array{Float64,1}
+        @test sum(rs[:ACTUAL]) ≈ 730337.0
+
+        # portion of result set
+        @test typeof(rs[1:2]) == SASLib.ResultSet
+        @test typeof(rs[:ACTUAL, :PREDICT]) == SASLib.ResultSet
+        @test rs[1:2][1][1] ≈ 925.0
+        @test rs[:ACTUAL, :PREDICT][1][1] ≈ 925.0
+
+        # setindex!
+        rs[1,1] = 100.0
+        @test rs[1,1] ≈ 100.0
+        rs[1,:ACTUAL] = 200.0
+        @test rs[1,:ACTUAL] ≈ 200.0
+
+        # display related
+        @test typeof(show(rs)) == Void
+        @test SASLib.sizestr(rs) == "1440 rows x 10 columns"
+    end
+
+    @testset "metadata" begin
+        h = openfile("data_pandas", "test1.sas7bdat")
+        md = metadata(h)
+        @test md.filename == "data_pandas/test1.sas7bdat"
+        @test md.encoding == "WINDOWS-1252"
+        @test md.endianness == :LittleEndian
+        @test md.compression == :none
+        @test md.pagesize == 65536
+        @test md.npages == 1
+        @test md.nrows == 10
+        @test md.ncols == 100
+        @test length(md.columnsinfo) == 100
+        @test md.columnsinfo[1] == Pair(:Column1, Float64)
     end
 
     @testset "stat_transfer" begin
@@ -155,8 +198,9 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
     @testset "AHS2013" begin
         handler = openfile("data_AHS2013", "topical.sas7bdat")
         rs = SASLib.read(handler, 1000)
+        @test size(rs) == (1000, 114)
+        @test typeof(show(handler)) == Void
         SASLib.close(handler)
-		@test size(rs) == (1000, 114)
 		# @test result[:page_count] == 10
         # @test result[:page_length] == 16384
         # @test result[:system_endianness] == :LittleEndian
