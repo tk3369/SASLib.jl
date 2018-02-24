@@ -89,7 +89,7 @@ Base.next(rs::ResultSet, i::Int) = (rs[i], i+1)
 
 # Display ResultSet object
 function Base.show(io::IO, rs::ResultSet) 
-    println(io, "ResultSet (", sizestr(rs), ")")
+    println(io, "SASLib.ResultSet (", sizestr(rs), ")")
     max_rows = 5
     max_cols = 10
     n = min(size(rs, 1), max_rows)
