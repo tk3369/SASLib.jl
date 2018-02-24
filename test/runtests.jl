@@ -186,6 +186,11 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
         @test md.ncols == 100
         @test length(md.columnsinfo) == 100
         @test md.columnsinfo[1] == Pair(:Column1, Float64)
+
+        md2 = metadata(getpath("data_pandas", "test1.sas7bdat"))
+        for f in fieldnames(SASLib.Metadata)
+            @test getfield(md, f) == getfield(md2, f)
+        end
     end
 
     @testset "stat_transfer" begin
