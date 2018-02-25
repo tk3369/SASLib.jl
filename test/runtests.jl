@@ -282,6 +282,11 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
 
     end
 
+    # see output; keep this for coverage reason
+    @testset "verbosity" begin
+        rs = readsas("data_pandas/test1.sas7bdat"; verbose_level = 2)
+    end
+
     @testset "just reads" begin
         for dir in ["data_pandas", "data_reikoch", "data_AHS2013", "data_misc"]
             for f in readdir(dir)
