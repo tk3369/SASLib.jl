@@ -155,7 +155,6 @@ function readsas(filename::AbstractString;
         isdefined(handler, :string_decoder) && Base.close(handler.string_decoder)
         handler != nothing && close(handler)
     end
-    return Dict()
 end
 
 # Read a single float of the given width (4 or 8).
@@ -818,13 +817,13 @@ function read_chunk(handler, nrows=0)
 
     if !isdefined(handler, :column_types)
         Compat.@warn("No columns to parse from file")
-        return SASLib.ResultSet()
+        return ResultSet()
     end
     # println("column_types = $(handler.column_types)")
 
     if handler.row_count == 0
         Compat.@warn("File has no data")
-        return SASLib.ResultSet()
+        return ResultSet()
     end
     
     # println("IN: read_chunk")
