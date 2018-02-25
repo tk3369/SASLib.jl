@@ -285,6 +285,7 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
     # see output; keep this for coverage reason
     @testset "verbosity" begin
         rs = readsas("data_pandas/test1.sas7bdat"; verbose_level = 2)
+        @test size(rs, 1) > 0
     end
 
     @testset "just reads" begin
