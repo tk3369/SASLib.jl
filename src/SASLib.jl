@@ -1061,7 +1061,7 @@ function readline(handler)
     # println("  start loop")
     while true
         if handler.current_page_type == page_meta_type
-            #println("    page type == page_meta_type")
+            println("  page type == page_meta_type ", handler.current_page, ":", handler.current_row_in_page_index)
             flag = handler.current_row_in_page_index >= length(handler.current_page_data_subheader_pointers)
             if flag
                 # println("    reading next page")
@@ -1074,23 +1074,23 @@ function readline(handler)
             end
             current_subheader_pointer = 
                 handler.current_page_data_subheader_pointers[handler.current_row_in_page_index+1]
-                # println3(handler, "    current_subheader_pointer = $(current_subheader_pointer)")
-                # println3(handler, "    handler.compression = $(handler.compression)")
-                cm = compression_method_none
-                if current_subheader_pointer.compression == subheader_comp_compressed
-                    if handler.compression != compression_method_none
-                        cm = handler.compression
-                    else
-                        cm = compression_method_rle  # default to RLE if handler doesn't have the info yet
-                    end
+            # println3(handler, "    current_subheader_pointer = $(current_subheader_pointer)")
+            # println3(handler, "    handler.compression = $(handler.compression)")
+            cm = compression_method_none
+            if current_subheader_pointer.compression == subheader_comp_compressed
+                if handler.compression != compression_method_none
+                    cm = handler.compression
+                else
+                    cm = compression_method_rle  # default to RLE if handler doesn't have the info yet
                 end
-                process_byte_array_with_data(handler,
-                    current_subheader_pointer.offset,
-                    current_subheader_pointer.length, cm)
+            end
+            process_byte_array_with_data(handler,
+                current_subheader_pointer.offset,
+                current_subheader_pointer.length, cm)
             return false
         elseif (handler.current_page_type == page_mix_types[1] ||
                 handler.current_page_type == page_mix_types[2])
-            # println3(handler, "  page type == page_mix_types_1/2")
+            println("  page type == page_mix_types_1/2 ", handler.current_page, ":", handler.current_row_in_page_index)
 
             offset = handler.page_bit_offset 
             offset += subheader_pointers_offset
@@ -1122,7 +1122,7 @@ function readline(handler)
             end
             return false
         elseif handler.current_page_type == page_data_type
-            #println("    page type == page_data_type")
+            println("  page type == page_data_type ", handler.current_page, ":", handler.current_row_in_page_index)
             process_byte_array_with_data(handler,
                 handler.page_bit_offset + subheader_pointers_offset +
                 handler.current_row_in_page_index * handler.row_length,
