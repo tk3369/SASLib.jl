@@ -12,7 +12,7 @@ Metadata contains information about a SAS data file.
 - `npages`: number of pages in the file
 - `nrows`: number of data rows in the file
 - `ncols`: number of data columns in the file
-- `columnsinfo`: vector of column symbols and their respective types (Float64 or String)
+- `columnsinfo`: vector of column symbols and their respective types
 """
 struct Metadata
     filename::AbstractString
@@ -23,15 +23,27 @@ struct Metadata
     npages::Int
     nrows::Int
     ncols::Int
-    columnsinfo::Vector{Pair{Symbol, DataType}}  # Float64 or String
+    columnsinfo::Vector{Pair{Symbol, Type}}
 end
 
-function metadata(h::Handler)
-    ci = [Pair(h.column_symbols[i], 
-               h.column_types[i] == column_type_decimal ? Float64 : String) 
-            for i in 1:h.column_count]
-    cmp = ifelse(h.compression == compression_method_rle, :RLE,
-     ifelse(h.compression == compression_method_rdc, :RDC, :none))
+"""
+Return metadata of a SAS data file.  See `SASLib.Metadata`.
+"""
+function metadata(fname::AbstractString)
+    h = nothing
+    try
+        h = SASLib.open(fname, verbose_level = 0)
+        rs = read(h, 1)
+        _metadata(h, rs)
+    finally
+        h != nothing && SASLib.close(h)
+    end
+end
+
+# construct Metadata struct using handler & result set data
+function _metadata(h::Handler, rs::ResultSet)
+    cmp = h.compression == compression_method_rle ?
+            :RLE : (h.compression == compression_method_rdc ? :RDC : :none)
     Metadata(
         h.config.filename,
         h.file_encoding,
@@ -41,16 +53,39 @@ function metadata(h::Handler)
         h.page_count,
         h.row_count,
         h.column_count,
-        ci
+        [Pair(x, eltype(rs[x])) for x in names(rs)]
     )
 end
 
-function metadata(fname::AbstractString)
-    local h
-    try
-        h = SASLib.open(fname)
-        metadata(h)
-    finally
-        SASLib.close(h)
+# pretty print
+function Base.show(io::IO, md::Metadata)
+    println(io, "File: ", md.filename, " (", md.nrows, " x ", md.ncols, ")")
+    displaytable(io, colfmt(md); index=true)
+end
+
+# Column display format
+function colfmt(md::Metadata)
+    [string(first(p), "(", typesfmt(typesof(last(p))), 
+        ")") for p in md.columnsinfo]
+end
+
+# Compact types format
+# e.g. (Date, Missings.Missing) => "Date/Missings.Missing"
+function typesfmt(ty::Tuple; excludemissing = false)
+    ar = excludemissing ?
+        collect(Iterators.filter(x -> x != Missings.Missing, ty)) : [ty...]
+    join(sort(string.(ar)), "/")
+end
+
+# Extract types from a Union
+# e.g.
+#   Union{Int64, Int32, Float32} => (Int64, Int32, Float32)
+#   Int32 => (Int32,)
+function typesof(ty::Type)
+    if ty isa Union
+        y = typesof(ty.b)
+        y isa Tuple ? (ty.a, y...) : (ty.a, y)
+    else
+        (ty,)
     end
 end
