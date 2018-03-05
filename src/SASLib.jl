@@ -3,6 +3,7 @@ __precompile__()
 module SASLib
 
 using StringEncodings, Missings, Compat.Dates, Compat.Distributed, Compat
+using TabularDisplay
 
 export readsas, REGULAR_STR_ARRAY
 

@@ -320,13 +320,17 @@ julia> A[1:5,:]
  656.0  646.0
 ```
 
-### Metadata
+### File Metadata
 
 You may obtain meta data for a SAS data file using the `metadata` function.
 
 ```julia
 julia> md = metadata("productsales.sas7bdat")
-SASLib.Metadata("productsales.sas7bdat", "US-ASCII", :LittleEndian, :none, 8192, 18, 1440, 10, Pair{Symbol,DataType}[:ACTUAL=>Float64, :PREDICT=>Float64, :COUNTRY=>String, :REGION=>String, :DIVISION=>String, :PRODTYPE=>String, :PRODUCT=>String, :QUARTER=>Float64, :YEAR=>Float64, :MONTH=>Float64])
+File: productsales.sas7bdat (1440 x 10)
+1:ACTUAL(Float64)                5:DIVISION(String)               9:YEAR(Float64)
+2:PREDICT(Float64)               6:PRODTYPE(String)               10:MONTH(Date/Missings.Missing)
+3:COUNTRY(String)                7:PRODUCT(String) 
+4:REGION(String)                 8:QUARTER(Float64)
 ```
 
 It's OK to access the fields directly.
@@ -343,15 +347,10 @@ julia> fieldnames(SASLib.Metadata)
  :ncols      
  :columnsinfo
 
-julia> md.nrows
-1440
-```
+julia> md = metadata("test3.sas7bdat");
 
-If you already have a `SASLib.Handler` object from the `SASLib.open` call, you can get metadata directly from the handler:
-
-```julia
-julia> metadata(handler)
-SASLib.Metadata("productsales.sas7bdat", "US-ASCII", :LittleEndian, :none, 8192, 18, 1440, 10, Pair{Symbol,DataType}[:ACTUAL=>Float64, :PREDICT=>Float64, :COUNTRY=>String, :REGION=>String, :DIVISION=>String, :PRODTYPE=>String, :PRODUCT=>String, :QUARTER=>Float64, :YEAR=>Float64, :MONTH=>Float64])
+julia> md.compression
+:RDC
 ```
 
 ## Related Packages
