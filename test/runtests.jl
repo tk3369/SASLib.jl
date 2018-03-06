@@ -2,7 +2,7 @@ using SASLib, Missings
 using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat
 
 function getpath(dir, file) 
-    path = "$dir/$file"
+    path = joinpath(dir, file)
     #println("================ $path ================")
     path
 end
@@ -51,7 +51,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
     @testset "open and close" begin
         handler = openfile("data_pandas", "test1.sas7bdat")
         @test typeof(handler) == SASLib.Handler
-        @test handler.config.filename == "data_pandas/test1.sas7bdat"
+        @test handler.config.filename == getpath("data_pandas", "test1.sas7bdat")
         @test SASLib.close(handler) == nothing
     end
 
@@ -67,7 +67,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
     @testset "incremental read" begin
         handler = openfile("data_pandas", "test1.sas7bdat")
-        @test handler.config.filename == "data_pandas/test1.sas7bdat"
+        @test handler.config.filename == getpath("data_pandas", "test1.sas7bdat")
         result = SASLib.read(handler, 3)  # read 3 rows
         @test size(result, 1) == 3
         result = SASLib.read(handler, 4)  # read 4 rows
@@ -176,7 +176,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
     @testset "metadata" begin
         md = getmetadata("data_pandas", "test1.sas7bdat")
-        @test md.filename == "data_pandas/test1.sas7bdat"
+        @test md.filename == getpath("data_pandas", "test1.sas7bdat")
         @test md.encoding == "WINDOWS-1252"
         @test md.endianness == :LittleEndian
         @test md.compression == :none
@@ -249,17 +249,17 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
     @testset "array constructors" begin
         
-        rs = readsas("data_AHS2013/homimp.sas7bdat")
+        rs = readfile("data_AHS2013", "homimp.sas7bdat")
         @test typeof(rs[:RAS]) == SASLib.ObjectPool{String,UInt16}
 
         # string_array_fn test for specific string columns
-        rs = readsas("data_AHS2013/homimp.sas7bdat", 
+        rs = readfile("data_AHS2013", "homimp.sas7bdat", 
             string_array_fn = Dict(:RAS => REGULAR_STR_ARRAY))
         @test typeof(rs[:RAS]) == Array{String,1}
         @test typeof(rs[:RAH]) != Array{String,1}
 
         # string_array_fn test for all string columns
-        rs = readsas("data_AHS2013/homimp.sas7bdat", 
+        rs = readfile("data_AHS2013", "homimp.sas7bdat", 
             string_array_fn = Dict(:_all_ => REGULAR_STR_ARRAY))
         @test typeof(rs[:RAS])     == Array{String,1}
         @test typeof(rs[:RAH])     == Array{String,1}
@@ -269,13 +269,13 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
         # number_array_fn test by column name
         makesharedarray(n) = SharedArray{Float64}(n)
-        rs = readsas("data_misc/numeric_1000000_2.sas7bdat", 
+        rs = readfile("data_misc", "numeric_1000000_2.sas7bdat", 
             number_array_fn = Dict(:f => makesharedarray))
         @test typeof(rs[:f]) == SharedArray{Float64,1}
         @test typeof(rs[:x]) == Array{Float64,1}
 
         # number_array_fn test for all numeric columns
-        rs = readsas("data_misc/numeric_1000000_2.sas7bdat", 
+        rs = readfile("data_misc", "numeric_1000000_2.sas7bdat", 
         number_array_fn = Dict(:_all_ => makesharedarray))
         @test typeof(rs[:f]) == SharedArray{Float64,1}
         @test typeof(rs[:x]) == SharedArray{Float64,1}
@@ -284,7 +284,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
     # see output; keep this for coverage reason
     @testset "verbosity" begin
-        rs = readsas("data_pandas/test1.sas7bdat"; verbose_level = 2)
+        rs = readfile("data_pandas", "test1.sas7bdat"; verbose_level = 2)
         @test size(rs, 1) > 0
     end
 
