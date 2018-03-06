@@ -8,6 +8,7 @@ function getpath(dir, file)
 end
 readfile(dir, file; kwargs...)  = readsas(getpath(dir, file); kwargs...)
 openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
+getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
 @testset "SASLib" begin
 
@@ -174,8 +175,7 @@ openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
     end
 
     @testset "metadata" begin
-        h = openfile("data_pandas", "test1.sas7bdat")
-        md = metadata(h)
+        md = getmetadata("data_pandas", "test1.sas7bdat")
         @test md.filename == "data_pandas/test1.sas7bdat"
         @test md.encoding == "WINDOWS-1252"
         @test md.endianness == :LittleEndian
