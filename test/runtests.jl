@@ -187,10 +187,20 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         @test length(md.columnsinfo) == 100
         @test md.columnsinfo[1] == Pair(:Column1, Float64)
 
-        md2 = metadata(getpath("data_pandas", "test1.sas7bdat"))
-        for f in fieldnames(SASLib.Metadata)
-            @test getfield(md, f) == getfield(md2, f)
-        end
+        md = getmetadata("data_pandas", "productsales.sas7bdat")
+        @test typeof(show(md)) == Void
+        println()
+
+        @test SASLib.typesof(Int64) == (Int64,)
+        @test SASLib.typesof(Union{Int64,Int32}) == (Int64,Int32)
+        @test SASLib.typesof(Union{Int64,Int32,Missings.Missing}) == (Int64,Int32,Missings.Missing)
+
+        @test SASLib.typesfmt((Int64,)) == "Int64"
+        @test SASLib.typesfmt((Int64,Int32)) == "Int64/Int32"
+        @test SASLib.typesfmt((Int64,Int32,Missings.Missing)) == "Int64/Int32/Missings.Missing"
+        @test SASLib.typesfmt((Int64,Int32); excludemissing=true) == "Int64/Int32"
+        @test SASLib.typesfmt((Int64,Int32,Missings.Missing); excludemissing=true) == "Int64/Int32"
+        @test SASLib.colfmt(md)[1] == "ACTUAL(Float64)"
     end
 
     @testset "stat_transfer" begin
