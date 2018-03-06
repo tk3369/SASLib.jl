@@ -74,7 +74,7 @@ end
 function typesfmt(ty::Tuple; excludemissing = false)
     ar = excludemissing ?
         collect(Iterators.filter(x -> x != Missings.Missing, ty)) : [ty...]
-    join(sort(string.(ar)), "/")
+    join(string.(ar), "/")
 end
 
 # Extract types from a Union
