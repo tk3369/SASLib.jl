@@ -15,7 +15,7 @@ Pkg.add("SASLib")
 
 ## Read Performance
 
-I did benchmarking mostly on my Macbook Pro laptop.  In general, the Julia implementation is somewhere between 10-100x faster than the Python counterpart.  Test results are documented in the `test/perf_results_<version>` folders.
+I did benchmarking mostly on my Macbook Pro laptop.  In general, the Julia implementation is somewhere between 10-100x faster than the Python Pandas.  Test results are documented in the `test/perf_results_<version>` folders.
 
 ## User Guide
 
@@ -86,7 +86,7 @@ Columns 1:ACTUAL, 2:PREDICT, 3:YEAR, 4:MONTH
 
 ### Assignments
 
-You may assign values at a cell level.  Doing so has a side effect.
+You may assign values at the cell level.  Doing so has a side effect.
 
 ```
 julia> srs = rs[:ACTUAL, :PREDICT, :YEAR, :MONTH][1:2]
@@ -216,14 +216,14 @@ If you need to read files incrementally, you can use the `SASLib.open` function 
 julia> handler = SASLib.open("productsales.sas7bdat")
 SASLib.Handler[productsales.sas7bdat]
 
-julia> results = SASLib.read(handler, 2)
+julia> rs = SASLib.read(handler, 2)
 Read productsales.sas7bdat with size 2 x 10 in 0.06831 seconds
 SASLib.ResultSet (2 rows x 10 columns)
 Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PRODUCT, 8:QUARTER, 9:YEAR, 10:MONTH
 1: 925.0, 850.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-01-01
 2: 999.0, 297.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-02-01
 
-julia> results = SASLib.read(handler, 3)
+julia> rs = SASLib.read(handler, 3)
 Read productsales.sas7bdat with size 3 x 10 in 0.00046 seconds
 SASLib.ResultSet (3 rows x 10 columns)
 Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PRODUCT, 8:QUARTER, 9:YEAR, 10:MONTH
@@ -282,10 +282,7 @@ julia> typeof.(columns(rs))
 
 ### Numeric Columns Constructor
 
-In general, SASLib allocates native arrays when returning numerical column data.  However, you can provide a custom constructor so you would be able to either preallcoate the array or construct a different type of array.  The `number_array_fn` parameter is a Dict that maps  column symbols to the 
-custom constructors.  Similar to `string_array_fn`, this Dict may be 
-specified with a special symbol `:_all_` to indicate such constructor 
-be used for all numeric columns.
+In general, SASLib allocates native arrays when returning numerical column data.  However, you can provide a custom constructor so you would be able to either preallcoate the array or construct a different type of array.  The `number_array_fn` parameter is a Dict that maps  column symbols to the custom constructors.  Similar to `string_array_fn`, this Dict may be specified with a special symbol `:_all_` to indicate such constructor be used for all numeric columns.
 
 Example - create SharedArray:
 ```
