@@ -7,7 +7,7 @@ using TabularDisplay
 
 export readsas, REGULAR_STR_ARRAY
 
-import Base.show
+import Base: show, size
 
 include("constants.jl")
 include("utils.jl")

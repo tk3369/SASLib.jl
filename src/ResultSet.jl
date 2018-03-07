@@ -1,7 +1,5 @@
 #using IteratorInterfaceExtensions, TableTraits, TableTraitsUtils
 
-import Base.size
-
 """
 ResultSet is the primary object that represents data returned from 
 reading a SAS data file.  ResultSet implements the Base.Iteration
