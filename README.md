@@ -3,9 +3,9 @@
 [![Build Status](https://travis-ci.org/tk3369/SASLib.jl.svg?branch=master)](https://travis-ci.org/tk3369/SASLib.jl)
 [![codecov.io](http://codecov.io/github/tk3369/SASLib.jl/coverage.svg?branch=master)](http://codecov.io/github/tk3369/SASLib.jl?branch=master)
 
-The goal is to have a fast reader that allows greater interoperability of Julia with the SAS ecosystem.  Only `sas7bdat` format is supported.  
+The goal is to have a fast reader that allows greater interoperability of Julia with the SAS ecosystem.  Only `sas7bdat` format is supported.  SASLib is licensed under the MIT Expat license.
 
-SASLib is licensed under the MIT Expat license.
+_Notes:_ SASLib v0.5.0 coontains a major breaking change in the results being returned from the `readsas` or `SASLib.read` functions.  Please read documentation below about how to use the new `SASLib.ResultSet` object.
 
 ## Installation
 
