@@ -2,7 +2,4 @@ julia 0.6
 StringEncodings
 Missings
 Compat
-IteratorInterfaceExtensions
-TableTraits
-TableTraitsUtils
 TabularDisplay
