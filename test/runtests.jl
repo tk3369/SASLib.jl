@@ -191,13 +191,22 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         @test typeof(show(md)) == Void
         println()
 
-        @test SASLib.typesof(Int64) == (Int64,)
-        @test SASLib.typesof(Union{Int64,Int32}) == (Int64,Int32)
-        @test SASLib.typesof(Union{Int64,Int32,Missings.Missing}) == (Int64,Int32,Missings.Missing)
+        # Deal with v0.6/v0.7 difference
+        # v0.6 shows Missings.Missing
+        # v0.7 shows Missing
+        ty(x) = replace(x, "Missings.", "")   
+
+        # convenient comparison routine since v0.6/v0.7 displays different order
+        same(x,y) = sort(ty.(string.(collect(x)))) == sort(ty.(string.(collect(y))))
+
+        @test same(SASLib.typesof(Int64), (Int64,))
+        @test same(SASLib.typesof(Union{Int64,Int32}), (Int64,Int32))
+        @test same(SASLib.typesof(Union{Int64,Int32,Missings.Missing}),
+            (Int64,Int32,Missings.Missing))
 
         @test SASLib.typesfmt((Int64,)) == "Int64"
         @test SASLib.typesfmt((Int64,Int32)) == "Int64/Int32"
-        @test SASLib.typesfmt((Int64,Int32,Missings.Missing)) == "Int64/Int32/Missings.Missing"
+        @test ty(SASLib.typesfmt((Int64,Int32,Missings.Missing))) == "Int64/Int32/Missing"
         @test SASLib.typesfmt((Int64,Int32); excludemissing=true) == "Int64/Int32"
         @test SASLib.typesfmt((Int64,Int32,Missings.Missing); excludemissing=true) == "Int64/Int32"
         @test SASLib.colfmt(md)[1] == "ACTUAL(Float64)"
