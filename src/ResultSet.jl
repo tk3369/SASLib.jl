@@ -105,7 +105,7 @@ function Base.show(io::IO, rs::ResultSet)
     for i in 1:n
         print(io, i, ": ")
         for j in 1:m
-            j > 1 && print(", ")
+            j > 1 && print(io, ", ")
             print(io, rs.columns[j][i])
         end
         println(io)
