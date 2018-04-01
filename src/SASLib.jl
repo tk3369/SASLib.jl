@@ -12,6 +12,7 @@ import Base: show, size
 include("constants.jl")
 include("utils.jl")
 include("ObjectPool.jl")
+include("CIDict.jl")
 include("Types.jl")
 include("ResultSet.jl")
 include("Metadata.jl")
@@ -32,6 +33,7 @@ function _open(config::ReaderConfig)
     handler.current_page = 0
     _get_properties(handler)
     _parse_metadata(handler)
+    _post_metadata_handler(handler)
     return handler
 end
 
@@ -43,6 +45,7 @@ open(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
+        column_types::Dict = Dict{Symbol,DataType}(),
         verbose_level::Int64 = 1)
 
 Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
@@ -55,9 +58,11 @@ function open(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
+        column_types::Dict = Dict{Symbol,DataType}(),
         verbose_level::Int64 = 1)
     return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-        include_columns, exclude_columns, string_array_fn, number_array_fn, verbose_level))
+        include_columns, exclude_columns, string_array_fn, number_array_fn, 
+        column_types, verbose_level))
 end
 
 """
@@ -97,6 +102,7 @@ readsas(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
+        column_types::Dict = Dict{Symbol,DataType}(),
         verbose_level::Int64 = 1)
 
 Read a SAS7BDAT file.  
@@ -135,6 +141,9 @@ For numeric columns, you may specify your own array constructors using
 the `number_array_fn` parameter.  Perhaps you have a different kind of
 array to store the values e.g. SharedArray.
 
+Specify `column_type` argument if any conversion is required.  It should
+be a Dict, mapping column symbol to a data type.  
+
 For debugging purpose, `verbose_level` may be set to a value higher than 1.
 Verbose level 0 will output nothing to the console, essentially a total quiet 
 option.
@@ -146,11 +155,13 @@ function readsas(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
+        column_types::Dict = Dict{Symbol,DataType}(),
         verbose_level::Int64 = 1)
     handler = nothing
     try
         handler = _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-            include_columns, exclude_columns, string_array_fn, number_array_fn, verbose_level))
+            include_columns, exclude_columns, string_array_fn, number_array_fn, 
+            column_types, verbose_level))
         return read(handler)
     finally
         isdefined(handler, :string_decoder) && Base.close(handler.string_decoder)
@@ -387,6 +398,20 @@ function _parse_metadata(handler)
             throw(FileFormatError("Failed to read a meta data page from the SAS file."))
         end
         done = _process_page_meta(handler)
+    end
+end
+
+# Do this after finish reading metadata but before reading data
+function _post_metadata_handler(handler)
+
+    # save a copy of column types in a case insensitive dict
+    handler.column_types_dict = CIDict{Symbol,DataType}(handler.config.column_types)
+
+    # check column_types
+    for k in keys(handler.config.column_types)
+        if !case_insensitive_in(k, handler.column_symbols)
+            Compat.@warn("Unknown column symbol ($k) in column_types. Ignored.")
+        end
     end
 end
 
@@ -1006,7 +1031,7 @@ function _chunk_to_dataframe(handler, nrows)
                     rslt[name] = datetime_from_float(rslt[name])
                 end
             end
-
+            convert_column_type_if_needed!(handler, rslt, name)
         elseif ty == column_type_string
             # println("  String: size=$(size(handler.string_chunk))")
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
@@ -1016,6 +1041,22 @@ function _chunk_to_dataframe(handler, nrows)
         end
     end
     return rslt
+end
+
+# If the user specified a type for the column, try to convert the column data.
+function convert_column_type_if_needed!(handler, rslt, name)
+    if haskey(handler.column_types_dict, name)
+        type_wanted = handler.column_types_dict[name]
+        #println("$name exists in config.column_types, type_wanted=$type_wanted")
+        if type_wanted != Float64
+            try
+                converted_data = convert.(type_wanted, rslt[name])
+                rslt[name] = converted_data
+            catch ex
+                Compat.@warn("Unable to convert column to type $type_wanted, error=$ex")
+            end
+        end
+    end    
 end
 
 # Simple loop that reads data row-by-row.

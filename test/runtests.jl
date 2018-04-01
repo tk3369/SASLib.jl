@@ -10,6 +10,10 @@ readfile(dir, file; kwargs...)  = readsas(getpath(dir, file); kwargs...)
 openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
 getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
+# Struct used for column type conversion test case below
+struct YearStr year::String end
+Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
+
 @testset "SASLib" begin
 
     @testset "object pool" begin
@@ -299,6 +303,33 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         @test typeof(rs[:f]) == SharedArray{Float64,1}
         @test typeof(rs[:x]) == SharedArray{Float64,1}
 
+    end
+
+    # column type conversion
+    @testset "user specified column types" begin
+
+        # normal use case
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:YEAR => Int16, :QUARTER => Int8))
+        @test eltype(rs[:YEAR]) == Int16
+        @test eltype(rs[:QUARTER]) == Int8
+
+        # error handling - warn() when a column cannot be converted
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:YEAR => Int8, :QUARTER => Int8))
+        @test eltype(rs[:YEAR]) == Float64
+        @test eltype(rs[:QUARTER]) == Int8
+        #TODO expect warning for :YEAR conversion
+
+        # case insensitive column symbol
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:Quarter => Int8))
+        @test eltype(rs[:QUARTER]) == Int8
+
+        # conversion to custom types
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:Year => YearStr))
+        @test eltype(rs[:YEAR]) == YearStr
     end
 
     # see output; keep this for coverage reason
