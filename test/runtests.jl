@@ -56,7 +56,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         function testdict(lowercase_key, mixedcase_key, second_lowercase_key) 
 
             T = typeof(lowercase_key)
-            d = CIDict{T,Int}()
+            d = SASLib.CIDict{T,Int}()
 
             # getindex/setindex!
             d[lowercase_key] = 99
