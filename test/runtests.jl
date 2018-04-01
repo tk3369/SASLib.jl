@@ -52,6 +52,47 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test_throws BoundsError z[1:300] = 1:300
     end
 
+    @testset "case insensitive dict" begin
+        function testdict(lowercase_key, mixedcase_key, second_lowercase_key) 
+
+            T = typeof(lowercase_key)
+            d = CIDict{T,Int}()
+
+            # getindex/setindex!
+            d[lowercase_key] = 99
+            @test d[lowercase_key] == 99
+            @test d[mixedcase_key] == 99
+            d[mixedcase_key] = 88           # should replace original value
+            @test length(d) == 1            # still 1 element
+            @test d[lowercase_key] == 88
+            @test d[mixedcase_key] == 88
+
+            # haskey
+            @test haskey(d, lowercase_key) == true
+            @test haskey(d, mixedcase_key) == true
+
+            # iteration
+            d[second_lowercase_key] = 77
+            ks = T[]
+            vs = Int[]
+            for (k,v) in d
+                push!(ks, k)
+                push!(vs, v)
+            end
+            @test ks == [lowercase_key, second_lowercase_key]
+            @test vs == [88, 77]
+
+            # keys/values
+            @test collect(keys(d)) == [lowercase_key, second_lowercase_key]
+            @test collect(values(d)) == [88, 77]
+
+            # show
+            @test show(d) == nothing
+        end
+        testdict(:abc, :ABC, :def)
+        testdict("abc", "ABC", "def")
+    end
+
     @testset "open and close" begin
         handler = openfile("data_pandas", "test1.sas7bdat")
         @test typeof(handler) == SASLib.Handler
@@ -174,7 +215,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test rs[1,:ACTUAL] ≈ 200.0
 
         # display related
-        @test typeof(show(rs)) == Void
+        @test show(rs) == nothing
         @test SASLib.sizestr(rs) == "1440 rows x 10 columns"
     end
 
@@ -192,7 +233,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test md.columnsinfo[1] == Pair(:Column1, Float64)
 
         md = getmetadata("data_pandas", "productsales.sas7bdat")
-        @test typeof(show(md)) == Void
+        @test show(md) == nothing
         println()
 
         # Deal with v0.6/v0.7 difference
@@ -230,7 +271,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         handler = openfile("data_AHS2013", "topical.sas7bdat")
         rs = SASLib.read(handler, 1000)
         @test size(rs) == (1000, 114)
-        @test typeof(show(handler)) == Void
+        @test show(handler) == nothing
         SASLib.close(handler)
 		# @test result[:page_count] == 10
         # @test result[:page_length] == 16384

@@ -40,3 +40,5 @@ Base.next(d::CIDict, i::Int) = next(d.dct, i)
 Base.done(d::CIDict, i::Int) = done(d.dct, i)
 
 Base.show(io::IO, d::CIDict) = show(io, d.dct)
+
+Base.length(d::CIDict) = length(d.dct)
