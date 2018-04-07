@@ -39,6 +39,15 @@ Base.start(d::CIDict) = start(d.dct)
 Base.next(d::CIDict, i::Int) = next(d.dct, i)
 Base.done(d::CIDict, i::Int) = done(d.dct, i)
 
-Base.show(io::IO, d::CIDict) = show(io, d.dct)
-
 Base.length(d::CIDict) = length(d.dct)
+
+issym(x) = typeof(x) == Symbol
+
+function Base.show(io::IO, d::SASLib.CIDict)
+    print(io, "CIDict(")
+    for (i, (k,v)) in enumerate(d.dct)
+        i > 1 && print(io, ", ")
+        print(io, issym(k) ? ":" : "", k, " => ", v)
+    end
+    print(io, ")")
+end 
