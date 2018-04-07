@@ -317,6 +317,25 @@ julia> A[1:5,:]
  656.0  646.0
 ```
 
+### Column Type Conversion
+
+Often, you want a column to be an integer but the SAS7BDAT stores everything as Float64. Specifying the `column_type` argument does the conversion for you.
+
+```
+julia> rs = readsas("productsales.sas7bdat", column_types=Dict(:ACTUAL=>Int))
+Read productsales.sas7bdat with size 1440 x 10 in 0.08043 seconds
+SASLib.ResultSet (1440 rows x 10 columns)
+Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PRODUCT, 8:QUARTER, 9:YEAR, 10:MONTH
+1: 925, 850.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-01-01
+2: 999, 297.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-02-01
+3: 608, 846.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-03-01
+4: 642, 533.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 2.0, 1993.0, 1993-04-01
+5: 656, 646.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 2.0, 1993.0, 1993-05-01
+
+julia> typeof(rs[:ACTUAL])
+Array{Int64,1}
+```
+
 ### File Metadata
 
 You may obtain meta data for a SAS data file using the `metadata` function.
