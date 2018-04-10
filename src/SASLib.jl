@@ -45,7 +45,7 @@ open(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
-        column_types::Dict = Dict{Symbol,DataType}(),
+        column_types::Dict = Dict{Symbol,Type}(),
         verbose_level::Int64 = 1)
 
 Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
@@ -58,7 +58,7 @@ function open(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
-        column_types::Dict = Dict{Symbol,DataType}(),
+        column_types::Dict = Dict{Symbol,Type}(),
         verbose_level::Int64 = 1)
     return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
         include_columns, exclude_columns, string_array_fn, number_array_fn, 
@@ -102,7 +102,7 @@ readsas(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
-        column_types::Dict = Dict{Symbol,DataType}(),
+        column_types::Dict = Dict{Symbol,Type}(),
         verbose_level::Int64 = 1)
 
 Read a SAS7BDAT file.  
@@ -155,7 +155,7 @@ function readsas(filename::AbstractString;
         exclude_columns::Vector = [],
         string_array_fn::Dict = Dict(),
         number_array_fn::Dict = Dict(),
-        column_types::Dict = Dict{Symbol,DataType}(),
+        column_types::Dict = Dict{Symbol,Type}(),
         verbose_level::Int64 = 1)
     handler = nothing
     try
@@ -405,7 +405,7 @@ end
 function _post_metadata_handler(handler)
 
     # save a copy of column types in a case insensitive dict
-    handler.column_types_dict = CIDict{Symbol,DataType}(handler.config.column_types)
+    handler.column_types_dict = CIDict{Symbol,Type}(handler.config.column_types)
 
     # check column_types
     for k in keys(handler.config.column_types)
@@ -1050,8 +1050,7 @@ function convert_column_type_if_needed!(handler, rslt, name)
         #println("$name exists in config.column_types, type_wanted=$type_wanted")
         if type_wanted != Float64
             try
-                converted_data = convert.(type_wanted, rslt[name])
-                rslt[name] = converted_data
+                rslt[name] = convert(Vector{type_wanted}, rslt[name])
             catch ex
                 Compat.@warn("Unable to convert column to type $type_wanted, error=$ex")
             end

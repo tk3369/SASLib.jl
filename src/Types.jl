@@ -15,7 +15,7 @@ struct ReaderConfig
     exclude_columns::Vector
     string_array_fn::Dict{Symbol, Function}
     number_array_fn::Dict{Symbol, Function}
-    column_types::Dict{Symbol, DataType}
+    column_types::Dict{Symbol, Type}
     verbose_level::Int64
 end
 
@@ -109,7 +109,7 @@ mutable struct Handler
     string_decoder_buffer::IOBuffer
     string_decoder::StringDecoder
 
-    column_types_dict::CIDict{Symbol,DataType}
+    column_types_dict::CIDict{Symbol,Type}
 
     Handler(config::ReaderConfig) = new(
         Base.open(config.filename),
