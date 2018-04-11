@@ -371,6 +371,13 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         rs = readfile("data_pandas", "productsales.sas7bdat"; 
             verbose_level = 0, column_types = Dict(:Year => YearStr))
         @test eltype(rs[:YEAR]) == YearStr
+
+        # test Union type
+        let T = Union{Int,Missing} 
+            rs = readfile("data_pandas", "productsales.sas7bdat"; 
+                verbose_level = 0, column_types = Dict(:Year => T))
+            @test eltype(rs[:YEAR]) == T
+        end
     end
 
     # see output; keep this for coverage reason
