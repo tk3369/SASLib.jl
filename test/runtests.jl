@@ -10,6 +10,10 @@ readfile(dir, file; kwargs...)  = readsas(getpath(dir, file); kwargs...)
 openfile(dir, file; kwargs...)  = SASLib.open(getpath(dir, file), kwargs...)
 getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
 
+# Struct used for column type conversion test case below
+struct YearStr year::String end
+Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
+
 @testset "SASLib" begin
 
     @testset "object pool" begin
@@ -46,6 +50,47 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         # more error conditions
         z = SASLib.ObjectPool{Int, UInt8}(0, 1000)
         @test_throws BoundsError z[1:300] = 1:300
+    end
+
+    @testset "case insensitive dict" begin
+        function testdict(lowercase_key, mixedcase_key, second_lowercase_key) 
+
+            T = typeof(lowercase_key)
+            d = SASLib.CIDict{T,Int}()
+
+            # getindex/setindex!
+            d[lowercase_key] = 99
+            @test d[lowercase_key] == 99
+            @test d[mixedcase_key] == 99
+            d[mixedcase_key] = 88           # should replace original value
+            @test length(d) == 1            # still 1 element
+            @test d[lowercase_key] == 88
+            @test d[mixedcase_key] == 88
+
+            # haskey
+            @test haskey(d, lowercase_key) == true
+            @test haskey(d, mixedcase_key) == true
+
+            # iteration
+            d[second_lowercase_key] = 77
+            ks = T[]
+            vs = Int[]
+            for (k,v) in d
+                push!(ks, k)
+                push!(vs, v)
+            end
+            @test ks == [lowercase_key, second_lowercase_key]
+            @test vs == [88, 77]
+
+            # keys/values
+            @test collect(keys(d)) == [lowercase_key, second_lowercase_key]
+            @test collect(values(d)) == [88, 77]
+
+            # show
+            @test show(d) == nothing
+        end
+        testdict(:abc, :ABC, :def)
+        testdict("abc", "ABC", "def")
     end
 
     @testset "open and close" begin
@@ -170,7 +215,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         @test rs[1,:ACTUAL] ≈ 200.0
 
         # display related
-        @test typeof(show(rs)) == Void
+        @test show(rs) == nothing
         @test SASLib.sizestr(rs) == "1440 rows x 10 columns"
     end
 
@@ -188,7 +233,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         @test md.columnsinfo[1] == Pair(:Column1, Float64)
 
         md = getmetadata("data_pandas", "productsales.sas7bdat")
-        @test typeof(show(md)) == Void
+        @test show(md) == nothing
         println()
 
         # Deal with v0.6/v0.7 difference
@@ -226,7 +271,7 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         handler = openfile("data_AHS2013", "topical.sas7bdat")
         rs = SASLib.read(handler, 1000)
         @test size(rs) == (1000, 114)
-        @test typeof(show(handler)) == Void
+        @test show(handler) == nothing
         SASLib.close(handler)
 		# @test result[:page_count] == 10
         # @test result[:page_length] == 16384
@@ -299,6 +344,40 @@ getmetadata(dir, file; kwargs...) = metadata(getpath(dir, file), kwargs...)
         @test typeof(rs[:f]) == SharedArray{Float64,1}
         @test typeof(rs[:x]) == SharedArray{Float64,1}
 
+    end
+
+    # column type conversion
+    @testset "user specified column types" begin
+
+        # normal use case
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:YEAR => Int16, :QUARTER => Int8))
+        @test eltype(rs[:YEAR]) == Int16
+        @test eltype(rs[:QUARTER]) == Int8
+
+        # error handling - warn() when a column cannot be converted
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:YEAR => Int8, :QUARTER => Int8))
+        @test eltype(rs[:YEAR]) == Float64
+        @test eltype(rs[:QUARTER]) == Int8
+        #TODO expect warning for :YEAR conversion
+
+        # case insensitive column symbol
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:Quarter => Int8))
+        @test eltype(rs[:QUARTER]) == Int8
+
+        # conversion to custom types
+        rs = readfile("data_pandas", "productsales.sas7bdat"; 
+            verbose_level = 0, column_types = Dict(:Year => YearStr))
+        @test eltype(rs[:YEAR]) == YearStr
+
+        # test Union type
+        let T = Union{Int,Missing} 
+            rs = readfile("data_pandas", "productsales.sas7bdat"; 
+                verbose_level = 0, column_types = Dict(:Year => T))
+            @test eltype(rs[:YEAR]) == T
+        end
     end
 
     # see output; keep this for coverage reason
