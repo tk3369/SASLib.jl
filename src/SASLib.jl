@@ -889,13 +889,8 @@ function read_chunk(handler, nrows=0)
     # handler.current_page = 0
     handler.current_row_in_chunk_index = 0
     
-    tic()
-    read_data(handler, nrows)
-    perf_read_data = toq()
-    
-    tic()
-    rslt = _chunk_to_dataframe(handler, nrows)
-    perf_chunk_to_data_frame = toq()
+    perf_read_data = @elapsed(read_data(handler, nrows))
+    perf_chunk_to_data_frame = @elapsed(rslt = _chunk_to_dataframe(handler, nrows))
 
     if handler.config.verbose_level > 1
         println("Read data in ", perf_read_data, " msec")
