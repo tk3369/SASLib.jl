@@ -35,9 +35,14 @@ Base.haskey(d::CIDict, s::String) = haskey(d.dct, lcase(s))
 Base.keys(d::CIDict) = keys(d.dct)
 Base.values(d::CIDict) = values(d.dct)
 
-Base.start(d::CIDict) = start(d.dct)
-Base.next(d::CIDict, i::Int) = next(d.dct, i)
-Base.done(d::CIDict, i::Int) = done(d.dct, i)
+@static if VERSION.minor < 7
+    Base.start(d::CIDict) = start(d.dct)
+    Base.next(d::CIDict, i::Int) = next(d.dct, i)
+    Base.done(d::CIDict, i::Int) = done(d.dct, i)
+else
+    Base.iterate(d::CIDict) = iterate(d.dct)
+    Base.iterate(d::CIDict, i) = iterate(d.dct, i)
+end
 
 Base.length(d::CIDict) = length(d.dct)
 

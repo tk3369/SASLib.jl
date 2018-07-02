@@ -24,7 +24,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         x = SASLib.ObjectPool{String, UInt8}(default, 5)
         @test length(x) == 5
         @test size(x) == (5, )
-        @test endof(x) == 5
+        @test @compat lastindex(x) == 5
         @test count(v -> v == default, x) == 5
         @test count(v -> v === default, x) == 5
         @test map(v -> "x$v", x) == [ "x", "x", "x", "x", "x" ]
@@ -239,7 +239,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         # Deal with v0.6/v0.7 difference
         # v0.6 shows Missings.Missing
         # v0.7 shows Missing
-        ty(x) = replace(x, "Missings.", "")   
+        ty(x) = replace(x, "Missings." => "")   
 
         # convenient comparison routine since v0.6/v0.7 displays different order
         same(x,y) = sort(ty.(string.(collect(x)))) == sort(ty.(string.(collect(y))))
