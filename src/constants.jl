@@ -213,6 +213,6 @@ const VENDOR_SAS           = 0x01
 const FALLBACK_ENCODING = "UTF-8"
 const ENCODINGS_OK_WITH_BASE_TRANSCODER = [ "UTF-8" , "US-ASCII" ]
 
-@compat const REGULAR_STR_ARRAY(n) = Array{String}(uninitialized, n)
+@compat const REGULAR_STR_ARRAY(n) = Array{String}(undef, n)
 const EMPTY_STRING = ""
 

@@ -74,7 +74,8 @@ read the entire file content.  When called again, fetch the next `nrows` rows.
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
     elapsed = @elapsed result = read_chunk(handler, nrows)
-    elapsed = round(elapsed, 5)
+    # TODO base keyword arg should not be needed due to Compat.jl issue #567
+    elapsed = Compat.round(elapsed; digits = 5, base = 10)
     println1(handler, "Read $(handler.config.filename) with size $(size(result, 1)) x $(size(result, 2)) in $elapsed seconds")
     return result
 end
@@ -983,7 +984,7 @@ end
 
 # convert Float64 value into Date object 
 function date_from_float(x::Vector{Float64})
-    @compat v = Vector{Union{Date, Missing}}(uninitialized, length(x))
+    @compat v = Vector{Union{Date, Missing}}(undef, length(x))
     for i in 1:length(x)
         v[i] = isnan(x[i]) ? missing : (sas_date_origin + Dates.Day(round(Int64, x[i])))
     end
@@ -992,7 +993,7 @@ end
 
 # convert Float64 value into DateTime object 
 function datetime_from_float(x::Vector{Float64})
-    @compat v = Vector{Union{DateTime, Missing}}(uninitialized, length(x))
+    @compat v = Vector{Union{DateTime, Missing}}(undef, length(x))
     for i in 1:length(x)
         v[i] = isnan(x[i]) ? missing : (sas_datetime_origin + Dates.Second(round(Int64, x[i])))
     end
