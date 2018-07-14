@@ -66,11 +66,8 @@ read the entire file content.  When called again, fetch the next `nrows` rows.
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
     elapsed = @elapsed result = read_chunk(handler, nrows)
-<<<<<<< HEAD
     # TODO base keyword arg should not be needed due to Compat.jl issue #567
     elapsed = Compat.round(elapsed; digits = 5, base = 10)
-=======
->>>>>>> 6f3b5dff97f2ac0030c851445de754976e3cee5d
     println1(handler, "Read $(handler.config.filename) with size $(size(result, 1)) x $(size(result, 2)) in $elapsed seconds")
     return result
 end
