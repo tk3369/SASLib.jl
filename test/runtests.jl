@@ -1,6 +1,10 @@
 using SASLib, Missings
 using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat.Statistics, Compat
 
+if VERSION > v"0.6"
+    import Statistics: mean
+end
+
 function getpath(dir, file) 
     path = joinpath(dir, file)
     #println("================ $path ================")
