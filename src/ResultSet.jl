@@ -83,9 +83,13 @@ function Base.getindex(rs::ResultSet, ss::Symbol...)
 end
 
 # Iterators
-Base.start(rs::ResultSet) = 1
-Base.done(rs::ResultSet, i::Int) = i > size(rs, 1)
-Base.next(rs::ResultSet, i::Int) = (rs[i], i+1)
+@static if VERSION < v"0.7.0-beta2.199"
+    Base.start(rs::ResultSet) = 1
+    Base.done(rs::ResultSet, i::Int) = i > size(rs, 1)
+    Base.next(rs::ResultSet, i::Int) = (rs[i], i+1)
+else
+    Base.iterate(rs::ResultSet, i=1) = i > size(rs,1) ? nothing : (rs[i], i+1)
+end
 
 # Display ResultSet object
 function Base.show(io::IO, rs::ResultSet) 

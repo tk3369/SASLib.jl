@@ -1,5 +1,5 @@
 using SASLib, Missings
-using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat
+using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat.Statistics, Compat
 
 function getpath(dir, file) 
     path = joinpath(dir, file)
