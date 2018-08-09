@@ -1,6 +1,10 @@
 using SASLib, Missings
 using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat
 
+@static if VERSION > v"0.7-"
+    import Statistics: mean
+end
+
 function getpath(dir, file) 
     path = joinpath(dir, file)
     #println("================ $path ================")
@@ -165,14 +169,14 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
 
         # test bad include/exclude param
         # see https://discourse.julialang.org/t/test-warn-doesnt-work-with-warn-in-0-7/9001
-        @static if VERSION.minor < 7
-            @test_warn "Unknown include column" readsas(fname, include_columns=[:blah, :Year])
-            @test_warn "Unknown exclude column" readsas(fname, exclude_columns=[:blah, :Year])
-        else
+        @static if VERSION > v"0.7-"
             Compat.Test.@test_logs (:warn, "Unknown include column blah") (:warn, 
                 "Unknown include column Year") readsas(fname, include_columns=[:blah, :Year])
             Compat.Test.@test_logs (:warn, "Unknown exclude column blah") (:warn, 
                 "Unknown exclude column Year") readsas(fname, exclude_columns=[:blah, :Year])
+        else
+            @test_warn "Unknown include column" readsas(fname, include_columns=[:blah, :Year])
+            @test_warn "Unknown exclude column" readsas(fname, exclude_columns=[:blah, :Year])
         end
         # error handling
         @test_throws SASLib.ConfigError readsas(fname, 

@@ -28,6 +28,12 @@ struct Column
     length::Int64
 end
 
+struct ColumnNamePointer
+    index::Int
+    offset::Int
+    length::Int
+end
+
 # technically these fields may have lower precision (need casting?)
 struct SubHeaderPointer
     offset::Int64
@@ -51,6 +57,7 @@ mutable struct Handler
     # column indices being read/returned 
     # tuple of column index, column symbol, column type
     column_indices::Vector{Tuple{Int64, Symbol, UInt8}}
+    column_name_pointers::Vector{ColumnNamePointer}
     
     current_page_data_subheader_pointers::Vector{SubHeaderPointer}
     cached_page::Vector{UInt8}
