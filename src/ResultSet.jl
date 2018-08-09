@@ -83,12 +83,12 @@ function Base.getindex(rs::ResultSet, ss::Symbol...)
 end
 
 # Iterators
-@static if VERSION < v"0.7.0-beta2.199"
+@static if VERSION > v"0.7-"
+    Base.iterate(rs::ResultSet, i=1) = i > size(rs,1) ? nothing : (rs[i], i+1)
+else
     Base.start(rs::ResultSet) = 1
     Base.done(rs::ResultSet, i::Int) = i > size(rs, 1)
     Base.next(rs::ResultSet, i::Int) = (rs[i], i+1)
-else
-    Base.iterate(rs::ResultSet, i=1) = i > size(rs,1) ? nothing : (rs[i], i+1)
 end
 
 # Display ResultSet object

@@ -1,7 +1,7 @@
 using SASLib, Missings
 using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat.Statistics, Compat
 
-@static if VERSION > v"0.6"
+@static if VERSION > v"0.7-"
     import Statistics: mean
 end
 
@@ -169,7 +169,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
 
         # test bad include/exclude param
         # see https://discourse.julialang.org/t/test-warn-doesnt-work-with-warn-in-0-7/9001
-        @static if VERSION > v"0.6"
+        @static if VERSION > v"0.7-"
             Compat.Test.@test_logs (:warn, "Unknown include column blah") (:warn, 
                 "Unknown include column Year") readsas(fname, include_columns=[:blah, :Year])
             Compat.Test.@test_logs (:warn, "Unknown exclude column blah") (:warn, 
