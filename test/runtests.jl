@@ -1,5 +1,5 @@
 using SASLib, Missings
-using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat.Statistics, Compat
+using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat
 
 @static if VERSION > v"0.7-"
     import Statistics: mean
