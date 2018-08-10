@@ -36,7 +36,7 @@ end
 """
 Find needle in the haystack with both `Vector{UInt8}` type arguments.
 """
-function Base.contains(haystack::AbstractVector{UInt8}, needle::AbstractVector{UInt8})
+function contains(haystack::AbstractVector{UInt8}, needle::AbstractVector{UInt8})
     hlen = length(haystack)
     nlen = length(needle)
     if hlen >= nlen
