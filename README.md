@@ -5,7 +5,7 @@
 
 The goal is to have a fast reader that allows greater interoperability of Julia with the SAS ecosystem.  Only `sas7bdat` format is supported.  SASLib is licensed under the MIT Expat license.
 
-_Notes:_ SASLib v0.5.0 coontains a major breaking change in the results being returned from the `readsas` or `SASLib.read` functions.  Please read documentation below about how to use the new `SASLib.ResultSet` object.
+_Notes:_ SASLib v0.5.0 contains a major breaking change in the results being returned from the `readsas` or `SASLib.read` functions.  Please read documentation below about how to use the new `SASLib.ResultSet` object.
 
 ## Installation
 
