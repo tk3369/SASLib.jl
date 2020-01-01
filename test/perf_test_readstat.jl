@@ -1,6 +1,7 @@
 using BenchmarkTools
 using SASLib
 using ReadStat
+using Printf
 
 if length(ARGS) != 1
 	println("Usage: julia ", PROGRAM_FILE, " <output-dir>")
@@ -17,19 +18,19 @@ function performtest(io, f, samples, seconds)
     println(io, "\n\n================ $f =================")
 	mime = MIME("text/plain")
     try
-	    info("testing $f with ReadStat")
+        @info("testing $f with ReadStat")
         println(io, "ReadStat:")
         b1 = @benchmark read_sas7bdat($f) samples=samples seconds=seconds
         show(io, mime, b1)
         println(io)
 
-	    info("testing $f with SASLib")
+        @info("testing $f with SASLib")
         println(io, "SASLib:")
         b2 = @benchmark readsas($f, verbose_level=0) samples=samples seconds=seconds
         show(io, mime, b2)
         println(io)
 
-	    info("testing $f with SASLib regular string")
+	@info("testing $f with SASLib regular string")
         println(io, "SASLib (regular string):")
         b3 = @benchmark readsas($f, string_array_fn=Dict(:_all_ => REGULAR_STR_ARRAY), verbose_level=0)  samples=samples seconds=seconds
         show(io, mime, b3)
@@ -47,7 +48,7 @@ function performtest(io, f, samples, seconds)
         p2 = round(Int, t2/t1*100)
         p3 = round(Int, t3/t1*100)
         comp = md.compression
-		info("Results: ", join(string.([f,t1,t2,p2,t3,p3,nd,ns,nt,comp]), ","))
+        @info("Results: ", join(string.([f,t1,t2,p2,t3,p3,nd,ns,nt,comp]), ","))
         @printf io "%-40s: %8.3f ms %8.3f ms (%3d%%) %8.3f ms (%3d%%) %4d %4d %4d %4s\n" f t1 t2 p2 t3 p3 nd ns nt comp
     catch ex
         println(ex)

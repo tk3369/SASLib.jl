@@ -1,28 +1,31 @@
 # Compare loading one file in Python vs Julia
+using Dates
+using InteractiveUtils: versioninfo
 
 if length(ARGS) != 3
     println("Usage: $PROGRAM_FILE <filename> <count> <outputdir>")
 	exit()
 end
 
-using SASLib, BenchmarkTools, Humanize
+using SASLib, BenchmarkTools
+using Humanize: datasize
 
 file = ARGS[1]
 cnt = ARGS[2]
 dir = ARGS[3]
 basename = split(file, "/")[end]
-shortname = replace(basename, r"\.sas7bdat", "")
+shortname = replace(basename, r"\.sas7bdat" => "")
 output = "$dir/py_jl_$(shortname)_$(cnt).md"
 
-prt(msg...) = info(now(), " ", msg...)
+prt(msg...) = println(now(), " ", msg...)
 
 # run python part
 # result is minimum time in seconds
 prt("Running python test for file ", file, " ", cnt, " times")
 pyver_cmd = `python -V`
 pyres_cmd = `python perf_test1.py $file $cnt`
-pyver = readstring(pipeline(pyver_cmd, stderr=pipeline(`cat`)))
-pyres = readstring(pipeline(pyres_cmd))
+pyver = readlines(open(pyver_cmd))[1]
+pyres = readlines(open(pyres_cmd))[1]  # first line of result is Minimum
 py = parse(Float64, match(r"[0-9]*\.[0-9]*", pyres).match) 
 
 # read metadata
@@ -53,7 +56,7 @@ end
 
 # analysis
 direction = jl < py ? "faster" : "slower"
-ratio = round(direction == "faster" ? py/jl : jl/py, 1)
+ratio = round(direction == "faster" ? py/jl : jl/py, digits = 1)
 
 io = nothing
 try
@@ -98,6 +101,6 @@ try
 catch err
      println(err)
 finally
-    io != nothing && try close(io) catch e println(e) end
+    io !== nothing && try close(io) catch e println(e) end
 end
 prt("Written file $output")
