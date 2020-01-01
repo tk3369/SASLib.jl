@@ -4,7 +4,7 @@
 [![Appveyor Build status](https://ci.appveyor.com/api/projects/status/rdg5h988aifn7lvg/branch/master?svg=true)](https://ci.appveyor.com/project/tk3369/saslib-jl/branch/master)
 [![codecov.io](http://codecov.io/github/tk3369/SASLib.jl/coverage.svg?branch=master)](http://codecov.io/github/tk3369/SASLib.jl?branch=master)
 
-The goal is to have a fast reader that allows greater interoperability of Julia with the SAS ecosystem.  Only `sas7bdat` format is supported.  SASLib is licensed under the MIT Expat license.
+SASLib is a fast reader for sas7bdat files. The goal is to allow easier integration with SAS processes.  Only `sas7bdat` format is supported.  SASLib is licensed under the MIT Expat license.
 
 ## Installation
 
