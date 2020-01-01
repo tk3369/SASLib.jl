@@ -1,10 +1,8 @@
 name: CompatHelper
 
 on:
-  repository_dispatch:
-    types: SASLib-CompateHelper
   schedule:
-    - cron: '05 21 * * *'
+    - cron: '31 5 * * *'
 
 jobs:
   CompatHelper:
