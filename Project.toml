@@ -10,6 +10,7 @@ StringEncodings = "69024149-9ee7-55f6-a4c4-859efe599b68"
 TabularDisplay = "3eeacb1d-13c2-54cc-9b18-30c86af3cadb"
 
 [compat]
+StringEncodings = "0.3"
 TabularDisplay = "1"
 julia = "1"
 
