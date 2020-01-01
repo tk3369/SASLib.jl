@@ -70,10 +70,10 @@ function colfmt(md::Metadata)
 end
 
 # Compact types format
-# e.g. (Date, Missings.Missing) => "Date/Missings.Missing"
+# e.g. (Date, Missing) => "Date/Missing"
 function typesfmt(ty::Tuple; excludemissing = false)
     ar = excludemissing ?
-        collect(Iterators.filter(x -> x != Missings.Missing, ty)) : [ty...]
+        collect(Iterators.filter(x -> x != Missing, ty)) : [ty...]
     join(string.(ar), "/")
 end
 

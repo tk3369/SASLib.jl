@@ -1,9 +1,9 @@
-using SASLib, Missings
-using Compat.Test, Compat.Dates, Compat.Distributed, Compat.SharedArrays, Compat
+using Test
+using SASLib
 
-@static if VERSION > v"0.7-"
-    import Statistics: mean
-end
+using Dates
+using Statistics: mean
+using SharedArrays: SharedArray
 
 function getpath(dir, file) 
     path = joinpath(dir, file)
@@ -28,7 +28,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         x = SASLib.ObjectPool{String, UInt8}(default, 5)
         @test length(x) == 5
         @test size(x) == (5, )
-        @test @compat lastindex(x) == 5
+        @test lastindex(x) == 5
         @test count(v -> v == default, x) == 5
         @test count(v -> v === default, x) == 5
         @test map(v -> "x$v", x) == [ "x", "x", "x", "x", "x" ]
@@ -169,15 +169,10 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
 
         # test bad include/exclude param
         # see https://discourse.julialang.org/t/test-warn-doesnt-work-with-warn-in-0-7/9001
-        @static if VERSION > v"0.7-"
-            Compat.Test.@test_logs (:warn, "Unknown include column blah") (:warn, 
-                "Unknown include column Year") readsas(fname, include_columns=[:blah, :Year])
-            Compat.Test.@test_logs (:warn, "Unknown exclude column blah") (:warn, 
-                "Unknown exclude column Year") readsas(fname, exclude_columns=[:blah, :Year])
-        else
-            @test_warn "Unknown include column" readsas(fname, include_columns=[:blah, :Year])
-            @test_warn "Unknown exclude column" readsas(fname, exclude_columns=[:blah, :Year])
-        end
+        @test_logs (:warn, "Unknown include column blah") (:warn, 
+            "Unknown include column Year") readsas(fname, include_columns=[:blah, :Year])
+        @test_logs (:warn, "Unknown exclude column blah") (:warn, 
+            "Unknown exclude column Year") readsas(fname, exclude_columns=[:blah, :Year])
         # error handling
         @test_throws SASLib.ConfigError readsas(fname, 
             include_columns=[1], exclude_columns=[1])
@@ -240,24 +235,19 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test show(md) == nothing
         println()
 
-        # Deal with v0.6/v0.7 difference
-        # v0.6 shows Missings.Missing
-        # v0.7 shows Missing
-        ty(x) = replace(x, "Missings." => "")   
-
         # convenient comparison routine since v0.6/v0.7 displays different order
-        same(x,y) = sort(ty.(string.(collect(x)))) == sort(ty.(string.(collect(y))))
+        same(x,y) = sort(string.(collect(x))) == sort(string.(collect(y)))
 
         @test same(SASLib.typesof(Int64), (Int64,))
         @test same(SASLib.typesof(Union{Int64,Int32}), (Int64,Int32))
-        @test same(SASLib.typesof(Union{Int64,Int32,Missings.Missing}),
-            (Int64,Int32,Missings.Missing))
+        @test same(SASLib.typesof(Union{Int64,Int32,Missing}),
+            (Int64,Int32,Missing))
 
         @test SASLib.typesfmt((Int64,)) == "Int64"
         @test SASLib.typesfmt((Int64,Int32)) == "Int64/Int32"
-        @test ty(SASLib.typesfmt((Int64,Int32,Missings.Missing))) == "Int64/Int32/Missing"
+        @test SASLib.typesfmt((Int64,Int32,Missing)) == "Int64/Int32/Missing"
         @test SASLib.typesfmt((Int64,Int32); excludemissing=true) == "Int64/Int32"
-        @test SASLib.typesfmt((Int64,Int32,Missings.Missing); excludemissing=true) == "Int64/Int32"
+        @test SASLib.typesfmt((Int64,Int32,Missing); excludemissing=true) == "Int64/Int32"
         @test SASLib.colfmt(md)[1] == "ACTUAL(Float64)"
     end
 
@@ -402,8 +392,8 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         end
     end
 
-	@testset "exception" begin
+    @testset "exception" begin
         @test_throws SASLib.FileFormatError readsas("runtests.jl")
-	end
+    end
 
 end

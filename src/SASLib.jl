@@ -1,9 +1,8 @@
-VERSION < v"0.7-" && __precompile__()
-
 module SASLib
 
-using StringEncodings, Missings, Compat.Dates, Compat.Distributed, Compat
+using StringEncodings
 using TabularDisplay
+using Dates
 
 export readsas, REGULAR_STR_ARRAY
 
@@ -66,8 +65,7 @@ read the entire file content.  When called again, fetch the next `nrows` rows.
 function read(handler::Handler, nrows=0) 
     # println("Reading $(handler.config.filename)")
     elapsed = @elapsed result = read_chunk(handler, nrows)
-    # TODO base keyword arg should not be needed due to Compat.jl issue #567
-    elapsed = Compat.round(elapsed; digits = 5, base = 10)
+    elapsed = round(elapsed, digits = 5)
     println1(handler, "Read $(handler.config.filename) with size $(size(result, 1)) x $(size(result, 2)) in $elapsed seconds")
     return result
 end
@@ -186,7 +184,7 @@ end
     return handler.cached_page[offset+1:offset+len]  #offset is 0-based
     # => too conservative.... we expect cached_page to be filled before this function is called
     # if handler.cached_page == []
-    #     Compat.@warn("_read_byte function going to disk")
+    #     @warn("_read_byte function going to disk")
     #     seek(handler.io, offset)
     #     try
     #         return Base.read(handler.io, len)
@@ -275,14 +273,14 @@ function read_header(handler)
     else
         handler.file_encoding = FALLBACK_ENCODING         # hope for the best
         handler.config.verbose_level > 0 &&  
-            Compat.@warn("Unknown file encoding value ($buf), defaulting to $(handler.file_encoding)")
+            @warn("Unknown file encoding value ($buf), defaulting to $(handler.file_encoding)")
     end
     #println2(handler, "file_encoding = $(handler.file_encoding)")
 
     # User override for encoding
     if handler.config.encoding != ""
         handler.config.verbose_level > 0 && 
-            Compat.@warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
+            @warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
         handler.file_encoding = handler.config.encoding
     end
     # println2(handler, "Final encoding = $(handler.file_encoding)")
@@ -405,7 +403,7 @@ function check_user_column_types(handler)
     # check column_types
     for k in keys(handler.config.column_types)
         if !case_insensitive_in(k, handler.column_symbols)
-            Compat.@warn("Unknown column symbol ($k) in column_types. Ignored.")
+            @warn("Unknown column symbol ($k) in column_types. Ignored.")
         end
     end
 end
@@ -613,7 +611,7 @@ function _process_columnsize_subheader(handler, offset, length)
     offset += int_len
     handler.column_count = _read_int(handler, offset, int_len)
     if (handler.col_count_p1 + handler.col_count_p2 != handler.column_count)
-        Compat.@warn("Warning: column count mismatch ($(handler.col_count_p1) + $(handler.col_count_p2) != $(handler.column_count))")
+        @warn("Warning: column count mismatch ($(handler.col_count_p1) + $(handler.col_count_p2) != $(handler.column_count))")
     end
 end
 
@@ -833,13 +831,13 @@ end
 function read_chunk(handler, nrows=0)
 
     if !isdefined(handler, :column_types)
-        Compat.@warn("No columns to parse from file")
+        @warn("No columns to parse from file")
         return ResultSet()
     end
     # println("column_types = $(handler.column_types)")
 
     if handler.row_count == 0
-        Compat.@warn("File has no data")
+        @warn("File has no data")
         return ResultSet()
     end
     
@@ -971,7 +969,7 @@ end
 
 # convert Float64 value into Date object 
 function date_from_float(x::Vector{Float64})
-    @compat v = Vector{Union{Date, Missing}}(undef, length(x))
+    v = Vector{Union{Date, Missing}}(undef, length(x))
     for i in 1:length(x)
         v[i] = isnan(x[i]) ? missing : (sas_date_origin + Dates.Day(round(Int64, x[i])))
     end
@@ -980,7 +978,7 @@ end
 
 # convert Float64 value into DateTime object 
 function datetime_from_float(x::Vector{Float64})
-    @compat v = Vector{Union{DateTime, Missing}}(undef, length(x))
+    v = Vector{Union{DateTime, Missing}}(undef, length(x))
     for i in 1:length(x)
         v[i] = isnan(x[i]) ? missing : (sas_datetime_origin + Dates.Second(round(Int64, x[i])))
     end
@@ -1040,7 +1038,7 @@ function convert_column_type_if_needed!(handler, rslt, name)
             try
                 rslt[name] = convert(Vector{type_wanted}, rslt[name])
             catch ex
-                Compat.@warn("Unable to convert column to type $type_wanted, error=$ex")
+                @warn("Unable to convert column to type $type_wanted, error=$ex")
             end
         end
     end    
@@ -1587,13 +1585,13 @@ function populate_column_indices(handler)
     if inflag && length(processed) != length(handler.config.include_columns) 
         diff = setdiff(handler.config.include_columns, processed)
         for c in diff
-            Compat.@warn("Unknown include column $c")
+            @warn("Unknown include column $c")
         end
     end
     if exflag && length(processed) != length(handler.config.exclude_columns) 
         diff = setdiff(handler.config.exclude_columns, processed)
         for c in diff
-            Compat.@warn("Unknown exclude column $c")
+            @warn("Unknown exclude column $c")
         end
     end
     # println2(handler, "column_indices = $(handler.column_indices)")
