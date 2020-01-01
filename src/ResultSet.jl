@@ -41,46 +41,58 @@ end
 export columns
 
 # accessors 
-columns(rs::ResultSet) = rs.columns
-Base.names(rs::ResultSet) = rs.names
-Base.size(rs::ResultSet) = rs.size
-Base.size(rs::ResultSet, i::Integer) = rs.size[i]
+columns(rs::ResultSet) = getfield(rs, :columns)
+Base.names(rs::ResultSet) = getfield(rs, :names)
+
+Base.size(rs::ResultSet) = getfield(rs, :size)
+Base.size(rs::ResultSet, i::Integer) = getfield(rs, :size)[i]
+Base.length(rs::ResultSet) = getfield(rs, :size)[1]
 
 # Size displayed as a string 
 sizestr(rs::ResultSet) = string(size(rs, 1)) * " rows x " * string(size(rs, 2)) * " columns"
 
 # find index for the column symbol
 function symindex(rs::ResultSet, s::Symbol) 
-    n = findfirst(x -> x == s, rs.names)
+    n = findfirst(x -> x == s, names(rs))
     n == 0 && error("column symbol not found: $s")
     n
 end
 
 # Direct cell access
-Base.getindex(rs::ResultSet, i::Integer, j::Integer) = rs.columns[j][i]
-Base.getindex(rs::ResultSet, i::Integer, s::Symbol) = rs.columns[symindex(rs, s)][i]
-Base.setindex!(rs::ResultSet, val, i::Integer, j::Integer) = rs.columns[j][i] = val
-Base.setindex!(rs::ResultSet, val, i::Integer, s::Symbol) = rs.columns[symindex(rs, s)][i] = val
+Base.getindex(rs::ResultSet, i::Integer, j::Integer) = columns(rs)[j][i]
+Base.getindex(rs::ResultSet, i::Integer, s::Symbol) = columns(rs)[symindex(rs, s)][i]
+Base.setindex!(rs::ResultSet, val, i::Integer, j::Integer) = columns(rs)[j][i] = val
+Base.setindex!(rs::ResultSet, val, i::Integer, s::Symbol) = columns(rs)[symindex(rs, s)][i] = val
 
-# Return a single row as a tuple
-Base.getindex(rs::ResultSet, i::Integer) = Tuple([c[i] for c in rs.columns])
+# Return a single row as a named tuple
+Base.getindex(rs::ResultSet, i::Integer) = 
+    NamedTuple{Tuple(names(rs))}([c[i] for c in columns(rs)])
 
-# Return a single row as a tuple
-Base.getindex(rs::ResultSet, c::Symbol) = rs.columns[symindex(rs, c)]
+# Return a single column
+Base.getindex(rs::ResultSet, c::Symbol) = columns(rs)[symindex(rs, c)]
 
 # index by row range => returns ResultSet object
 function Base.getindex(rs::ResultSet, r::UnitRange{Int})
-    ResultSet(map(x -> view(x, r), rs.columns), rs.names, (length(r), size(rs, 2)))
+    ResultSet(map(x -> view(x, r), columns(rs)), names(rs), (length(r), size(rs, 2)))
 end
 
 # index by columns => returns ResultSet object
 function Base.getindex(rs::ResultSet, ss::Symbol...)
     v = Int[]
-    for (idx, nam) in enumerate(rs.names)
+    for (idx, nam) in enumerate(names(rs))
         nam in ss && push!(v, idx)
     end
-    ResultSet(rs.columns[v], rs.names[v], (size(rs, 1), length(v)))
+    ResultSet(columns(rs)[v], names(rs)[v], (size(rs, 1), length(v)))
 end
+
+# Each property must represent a column to satisfy Tables.jl Columns interface
+Base.propertynames(rs::ResultSet) = names(rs)
+
+function Base.getproperty(rs::ResultSet, s::Symbol)
+    s ∈ names(rs) && return rs[s]
+    error("Column $s not found")
+end
+
 
 # Iterators
 @static if VERSION > v"0.7-"
@@ -102,26 +114,18 @@ function Base.show(io::IO, rs::ResultSet)
     print(io, "Columns ")
     for i in 1:m
         i > 1 && print(io, ", ")
-        print(io, i, ":", rs.names[i])
+        print(io, i, ":", names(rs)[i])
     end
-    m < length(rs.names) && print(io, " …")
+    m < length(names(rs)) && print(io, " …")
     println(io)
     for i in 1:n
         print(io, i, ": ")
         for j in 1:m
             j > 1 && print(io, ", ")
-            print(io, rs.columns[j][i])
+            print(io, columns(rs)[j][i])
         end
         println(io)
     end
     n < size(rs, 1) && println(io, "⋮")
 end
 
-# IteratableTables
-# IteratorInterfaceExtensions.isiterable(::ResultSet) = true
-
-# TableTraits.isiterabletable(::ResultSet) = true
-
-# function IteratorInterfaceExtensions.getiterator(rs::ResultSet)
-#     TableTraitsUtils.create_tableiterator(rs.columns, rs.names)
-# end

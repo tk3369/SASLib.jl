@@ -6,6 +6,7 @@ version = "1.0.0"
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 StringEncodings = "69024149-9ee7-55f6-a4c4-859efe599b68"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 TabularDisplay = "3eeacb1d-13c2-54cc-9b18-30c86af3cadb"
 
 [compat]
