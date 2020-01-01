@@ -158,7 +158,7 @@ function readsas(filename::AbstractString;
         return read(handler)
     finally
         isdefined(handler, :string_decoder) && Base.close(handler.string_decoder)
-        handler != nothing && close(handler)
+        handler !== nothing && close(handler)
     end
 end
 
@@ -534,7 +534,7 @@ function _get_subheader_index(handler, signature, compression, shtype)
     # if the signature is not found then it's likely storing binary data.
     # RLE (variable COMP == 4)
     # Uncompress (variable COMP == 0)
-    if val == nothing
+    if val === nothing
         if compression == subheader_comp_uncompressed || compression == subheader_comp_compressed
             val = index_dataSubheaderIndex
         else
@@ -1025,7 +1025,7 @@ function _chunk_to_dataframe(handler, nrows)
             # println("  String: column $j, name $name, size=$(size(handler.string_chunk[js, :]))")
             rslt[name] = handler.string_chunk[name]
         else
-            throw(FileFormatError("Unknown column type $(handler.column_types[j])"))
+            throw(FileFormatError("Unknown column type: $ty"))
         end
     end
     return rslt
@@ -1245,7 +1245,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
                     handler.current_row_in_chunk_index % 200 == 0 &&
                     isa(ar, ObjectPool) &&
                     ar.uniqueitemscount / ar.itemscount > 0.10
-                println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $( ar.itemscount)")
+                println2(handler, "Bumping column $(name) to regular array due to too many unique items $(ar.uniqueitemscount) out of $(ar.itemscount)")
                 ar = Array(ar)
                 handler.string_chunk[name] = ar
             end
