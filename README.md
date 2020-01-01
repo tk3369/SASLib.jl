@@ -16,6 +16,16 @@ Pkg.add("SASLib")
 
 I did benchmarking mostly on my Macbook Pro laptop.  In general, the Julia implementation is somewhere between 10-100x faster than the Python Pandas.  Test results are documented in the `test/perf_results_<version>` folders.
 
+Latest performance [test results for v1.0.0](test/perf_results_1.0.0) is as follows:
+
+Test|Result|
+----|------|
+py\_jl\_homimp\_50.md               |Julia is ~27.9x faster than Python/Pandas|
+py\_jl\_numeric\_1000000\_2\_100.md |Julia is ~10.2x faster than Python/Pandas|
+py\_jl\_productsales\_100.md        |Julia is ~46.9x faster than Python/Pandas|
+py\_jl\_test1\_100.md               |Julia is ~118.8x faster than Python/Pandas|
+py\_jl\_topical\_30.md              |Julia is ~27.3x faster than Python/Pandas|
+
 ## User Guide
 
 ```
