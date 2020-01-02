@@ -194,7 +194,9 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test rs[1,:ACTUAL] ≈ 925.0
 
         # row/column indexing
-        @test typeof(rs[1]) == Tuple{Float64,Float64,String,String,String,String,String,Float64,Float64,Date}
+        @test typeof(rs[1]) == NamedTuple{
+            (:ACTUAL, :PREDICT, :COUNTRY, :REGION, :DIVISION, :PRODTYPE, :PRODUCT, :QUARTER, :YEAR, :MONTH),
+            Tuple{Float64,Float64,String,String,String,String,String,Float64,Float64,Dates.Date}}
         @test typeof(rs[:ACTUAL]) == Array{Float64,1}
         @test sum(rs[:ACTUAL]) ≈ 730337.0
 
@@ -216,6 +218,10 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         # display related
         @test show(rs) == nothing
         @test SASLib.sizestr(rs) == "1440 rows x 10 columns"
+
+        # Tables.jl interface - getproperty test
+        @test rs.ACTUAL == rs[:ACTUAL]
+        @test names(rs) == propertynames(rs)
     end
 
     @testset "metadata" begin
