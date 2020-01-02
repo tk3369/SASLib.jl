@@ -12,6 +12,7 @@ TabularDisplay = "3eeacb1d-13c2-54cc-9b18-30c86af3cadb"
 [compat]
 StringEncodings = "0.3"
 TabularDisplay = "1"
+Tables = "0.2.3"
 julia = "1"
 
 [extras]
