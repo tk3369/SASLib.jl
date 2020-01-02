@@ -36,7 +36,7 @@ function metadata(fname::AbstractString)
         rs = read(h, 1)
         _metadata(h, rs)
     finally
-        h != nothing && SASLib.close(h)
+        h !== nothing && SASLib.close(h)
     end
 end
 

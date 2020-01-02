@@ -2,6 +2,8 @@ module SASLib
 
 using StringEncodings
 using TabularDisplay
+using Tables
+
 using Dates
 
 export readsas, REGULAR_STR_ARRAY
@@ -15,6 +17,7 @@ include("CIDict.jl")
 include("Types.jl")
 include("ResultSet.jl")
 include("Metadata.jl")
+include("tables.jl")
 
 function _open(config::ReaderConfig) 
     # println("Opening $(config.filename)")
