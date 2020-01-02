@@ -93,7 +93,6 @@ function Base.getproperty(rs::ResultSet, s::Symbol)
     error("Column $s not found")
 end
 
-
 # Iterators
 Base.iterate(rs::ResultSet, i=1) = i > size(rs,1) ? nothing : (rs[i], i+1)
 
