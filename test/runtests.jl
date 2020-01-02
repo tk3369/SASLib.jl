@@ -4,6 +4,7 @@ using SASLib
 using Dates
 using Statistics: mean
 using SharedArrays: SharedArray
+using Tables
 
 function getpath(dir, file) 
     path = joinpath(dir, file)
@@ -222,6 +223,13 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         # Tables.jl interface - getproperty test
         @test rs.ACTUAL == rs[:ACTUAL]
         @test names(rs) == propertynames(rs)
+
+        # Tables.jl coverage
+        @test Tables.schema(rs).names == Tuple(names(rs))
+        @test Tables.schema(rs).types == Tuple(eltype.([rs[s] for s in names(rs)]))
+        @test length(Tables.rowtable(rs)) == 1440
+        @test length(Tables.columntable(rs)) == 10
+        @test size(Tables.matrix(rs[:ACTUAL, :PREDICT])) == (1440,2)
     end
 
     @testset "metadata" begin
