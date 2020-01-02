@@ -53,17 +53,31 @@ Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PROD
 
 There are several ways to access the data conveniently without using any third party packages. Each cell value may be retrieved directly via the regular `[i,j]` index.  Accessing an entire row or column returns a tuple and a vector respectively.
 
+#### Direct cell access
 ```
 julia> rs[4,2]
 533.0
 
 julia> rs[4, :PREDICT]
 533.0
+```
 
+#### Indexing by row number returns a named tuple
+```
 julia> rs[1]
-(925.0, 850.0, "CANADA", "EAST", "EDUCATION", "FURNITURE", "SOFA", 1.0, 1993.0, 1993-01-01)
+(ACTUAL = 925.0, PREDICT = 850.0, COUNTRY = "CANADA", REGION = "EAST", DIVISION = "EDUCATION", PRODTYPE = "FURNITURE", PRODUCT = "SOFA", QUARTER = 1.0, YEAR = 1993.0, MONTH = 1993-01-01)
+```
 
+#### Columns access by name via indexing or as a property
+```
 julia> rs[:ACTUAL]
+1440-element Array{Float64,1}:
+ 925.0
+ 999.0
+ 608.0
+ ⋮
+
+julia> rs.ACTUAL
 1440-element Array{Float64,1}:
  925.0
  999.0
@@ -71,8 +85,7 @@ julia> rs[:ACTUAL]
  ⋮
 ```
 
-You may access a portion of the result set by indexing with unit range and column symbols. 
-
+#### Slice a range of rows
 ```
 julia> rs[2:4]
 SASLib.ResultSet (3 rows x 10 columns)
@@ -80,8 +93,10 @@ Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PROD
 1: 999.0, 297.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-02-01
 2: 608.0, 846.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 1.0, 1993.0, 1993-03-01
 3: 642.0, 533.0, CANADA, EAST, EDUCATION, FURNITURE, SOFA, 2.0, 1993.0, 1993-04-01
+```
 
-
+#### Slice a subset of columns
+```
 julia> rs[:ACTUAL, :PREDICT, :YEAR, :MONTH]
 SASLib.ResultSet (1440 rows x 4 columns)
 Columns 1:ACTUAL, 2:PREDICT, 3:YEAR, 4:MONTH
@@ -93,9 +108,9 @@ Columns 1:ACTUAL, 2:PREDICT, 3:YEAR, 4:MONTH
 ⋮
 ```
 
-### Assignments
+### Mutation
 
-You may assign values at the cell level.  Doing so has a side effect.
+You may assign values at the cell level, causing a side effect in memory:
 
 ```
 julia> srs = rs[:ACTUAL, :PREDICT, :YEAR, :MONTH][1:2]
@@ -116,51 +131,42 @@ Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PROD
 
 ### Iteration
 
-ResultSet implements the usual Base.iteration interface, so it's easy to walk through the results:
+ResultSet implements the usual standard iteration interface, so it's easy to walk through the results:
 
 ```
-julia> for r in rs
-         r[1] < 10 && println(r)
-       end
-(5.0, 425.0, "CANADA", "EAST", "CONSUMER", "FURNITURE", "SOFA", 1.0, 1993.0, 1993-01-01)
-(8.0, 957.0, "CANADA", "EAST", "CONSUMER", "FURNITURE", "SOFA", 3.0, 1993.0, 1993-07-01)
-(6.0, 214.0, "CANADA", "WEST", "EDUCATION", "OFFICE", "TABLE", 3.0, 1993.0, 1993-08-01)
-(9.0, 814.0, "CANADA", "WEST", "EDUCATION", "OFFICE", "TABLE", 4.0, 1993.0, 1993-11-01)
-(3.0, 405.0, "CANADA", "WEST", "CONSUMER", "FURNITURE", "SOFA", 2.0, 1994.0, 1994-05-01)
-(3.0, 938.0, "GERMANY", "WEST", "EDUCATION", "FURNITURE", "BED", 1.0, 1993.0, 1993-03-01)
-(4.0, 975.0, "U.S.A.", "EAST", "EDUCATION", "FURNITURE", "SOFA", 1.0, 1993.0, 1993-01-01)
-(9.0, 134.0, "U.S.A.", "EAST", "EDUCATION", "FURNITURE", "BED", 4.0, 1993.0, 1993-12-01)
-(6.0, 915.0, "U.S.A.", "WEST", "EDUCATION", "OFFICE", "DESK", 2.0, 1993.0, 1993-04-01)
+julia> mean(r.ACTUAL - r.PREDICT for r in rs)
+16.695833333333333
 ```
 
-### ResultSet Metadata
+### Metadata
 
 There are simple functions to retrieve meta information about a ResultSet.
 ```
 names(rs)
-columns(rs)
 size(rs)
+length(rs)
 ```
 
-### Conversion to DataFrame
+### Tables.jl / DataFrame 
 
-It may be beneficial to convert the result set to DataFrame for more complex queries and manipulations.  
+It may be beneficial to convert the result set to DataFrame for more complex queries and manipulations.
+The `SASLib.ResultSet` object implements the [Tables.jl](https://github.com/JuliaData/Tables.jl) interface,
+so you can directly create a DataFrame as shown below:
 
 ```julia
-julia> df = DataFrame(columns(rs), names(rs));
+julia> df = DataFrame(rs);
 
-julia> head(df)
-6×10 DataFrames.DataFrame
-│ Row │ ACTUAL │ PREDICT │ COUNTRY │ REGION │ DIVISION  │ PRODTYPE  │ PRODUCT │ QUARTER │ YEAR   │ MONTH      │
-├─────┼────────┼─────────┼─────────┼────────┼───────────┼───────────┼─────────┼─────────┼────────┼────────────┤
-│ 1   │ 925.0  │ 850.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 1.0     │ 1993.0 │ 1993-01-01 │
-│ 2   │ 999.0  │ 297.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 1.0     │ 1993.0 │ 1993-02-01 │
-│ 3   │ 608.0  │ 846.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 1.0     │ 1993.0 │ 1993-03-01 │
-│ 4   │ 642.0  │ 533.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 2.0     │ 1993.0 │ 1993-04-01 │
-│ 5   │ 656.0  │ 646.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 2.0     │ 1993.0 │ 1993-05-01 │
-│ 6   │ 948.0  │ 486.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 2.0     │ 1993.0 │ 1993-06-01 │
+julia> first(df, 5)
+5×10 DataFrame
+│ Row │ ACTUAL  │ PREDICT │ COUNTRY │ REGION │ DIVISION  │ PRODTYPE  │ PRODUCT │ QUARTER │ YEAR    │ MONTH      │
+│     │ Float64 │ Float64 │ String  │ String │ String    │ String    │ String  │ Float64 │ Float64 │ Dates…⍰    │
+├─────┼─────────┼─────────┼─────────┼────────┼───────────┼───────────┼─────────┼─────────┼─────────┼────────────┤
+│ 1   │ 925.0   │ 850.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 1.0     │ 1993.0  │ 1993-01-01 │
+│ 2   │ 999.0   │ 297.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 1.0     │ 1993.0  │ 1993-02-01 │
+│ 3   │ 608.0   │ 846.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 1.0     │ 1993.0  │ 1993-03-01 │
+│ 4   │ 642.0   │ 533.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 2.0     │ 1993.0  │ 1993-04-01 │
+│ 5   │ 656.0   │ 646.0   │ CANADA  │ EAST   │ EDUCATION │ FURNITURE │ SOFA    │ 2.0     │ 1993.0  │ 1993-05-01 │
 ```
-
 
 ### Inclusion/Exclusion of Columns
 
@@ -243,7 +249,8 @@ Columns 1:ACTUAL, 2:PREDICT, 3:COUNTRY, 4:REGION, 5:DIVISION, 6:PRODTYPE, 7:PROD
 julia> SASLib.close(handler)
 ```
 
-Note that there is no facility at the moment to jump and read a subset of rows.  Currently, SASLib always read from the beginning.
+Note that there is no facility at the moment to jump and read a subset of rows.  
+SASLib always read from the beginning.
 
 ### String Column Constructor
 
@@ -291,12 +298,12 @@ julia> typeof.(columns(rs))
 
 ### Numeric Columns Constructor
 
-In general, SASLib allocates native arrays when returning numerical column data.  However, you can provide a custom constructor so you would be able to either preallcoate the array or construct a different type of array.  The `number_array_fn` parameter is a Dict that maps  column symbols to the custom constructors.  Similar to `string_array_fn`, this Dict may be specified with a special symbol `:_all_` to indicate such constructor be used for all numeric columns.
+In general, SASLib allocates native arrays when returning numerical column data.  However, you can provide a custom constructor so you would be able to either pre-allcoate the array or construct a different type of array.  The `number_array_fn` parameter is a `Dict` that maps column symbols to the custom constructors.  Similar to `string_array_fn`, this Dict may be specified with a special symbol `:_all_` to indicate such constructor be used for all numeric columns.
 
-Example - create SharedArray:
+Example - create `SharedArray`:
 ```
 julia> rs = readsas("productsales.sas7bdat", include_columns=[:ACTUAL,:PREDICT], 
-                          number_array_fn=Dict(:ACTUAL => (n)->SharedArray{Float64}(n)));
+                    number_array_fn=Dict(:ACTUAL => (n)->SharedArray{Float64}(n)));
 Read productsales.sas7bdat with size 1440 x 2 in 0.00385 seconds
 
 julia> typeof.(columns(rs))
