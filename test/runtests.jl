@@ -224,12 +224,19 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test rs.ACTUAL == rs[:ACTUAL]
         @test names(rs) == propertynames(rs)
 
-        # Tables.jl coverage
+        # Tables.jl coverage - indirect tests / usage
         @test Tables.schema(rs).names == Tuple(names(rs))
         @test Tables.schema(rs).types == Tuple(eltype.([rs[s] for s in names(rs)]))
         @test length(Tables.rowtable(rs)) == 1440
         @test length(Tables.columntable(rs)) == 10
         @test size(Tables.matrix(rs[:ACTUAL, :PREDICT])) == (1440,2)
+
+        # Tables.jl coverage - direct tests
+        @test Tables.istable(typeof(rs)) === true
+        @test Tables.rowaccess(typeof(rs)) === true
+        @test Tables.columnaccess(typeof(rs)) === true
+        @test Tables.rows(rs) |> first |> propertynames |> Tuple == Tuple(names(rs))
+        @test Tables.columns(rs) |> propertynames |> Tuple == Tuple(names(rs))
     end
 
     @testset "metadata" begin
