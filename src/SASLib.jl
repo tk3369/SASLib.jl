@@ -6,6 +6,8 @@ using Tables
 
 using Dates
 
+import IteratorInterfaceExtensions, TableTraits
+
 export readsas, REGULAR_STR_ARRAY
 
 import Base: show, size
