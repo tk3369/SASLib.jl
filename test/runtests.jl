@@ -5,6 +5,7 @@ using Dates
 using Statistics: mean
 using SharedArrays: SharedArray
 using Tables
+import IteratorInterfaceExtensions, TableTraits
 
 function getpath(dir, file) 
     path = joinpath(dir, file)
@@ -237,6 +238,11 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test Tables.columnaccess(typeof(rs)) === true
         @test Tables.rows(rs) |> first |> propertynames |> Tuple == Tuple(names(rs))
         @test Tables.columns(rs) |> propertynames |> Tuple == Tuple(names(rs))
+
+        # Queryverse integration
+        @test TableTraits.isiterabletable(rs) == true
+        @test eltype(IteratorInterfaceExtensions.getiterator(rs)) <: NamedTuple
+        @test IteratorInterfaceExtensions.getiterator(rs) |> first |> propertynames |> Tuple == Tuple(names(rs))
     end
 
     @testset "metadata" begin
