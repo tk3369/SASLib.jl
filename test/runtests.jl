@@ -6,6 +6,7 @@ using Statistics: mean
 using SharedArrays: SharedArray
 using Tables
 import IteratorInterfaceExtensions, TableTraits
+using StringEncodings: encode,decode
 
 function getpath(dir, file)
     path = joinpath(dir, file)
@@ -330,6 +331,22 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         rs = readfile("data_pandas", "test1.sas7bdat", encoding = "US-ASCII")
         # @test result[:file_encoding] == "US-ASCII"
         @test rs[:Column42][3] == "dog"
+    end
+	
+    @testset "taiwan encodings" begin
+	# check cp950 support , the most prevalent encoding on traditional Han characters ;compatible with big5-2003
+	@test encode("€","CP950")==[0xa3, 0xe1]
+	# check big5-hkscs 2008 support, stringencodings is based on iconv but old version iconv had problem on east asian character esp. on hkscs
+	@test encode("鿋","big5-hkscs") == [0x87, 0xdf]   # big5-hkscs is compatible with big5-2003 but not fully compatible with CP950
+	# cp950 encoding
+        rs = readfile("data_big5", "cp950.sas7bdat")
+        @test rs[1,1] == "我愛你"
+	# wlatin1 encoding , this works on winxp ansi system but not in new unicode system 
+        rs = readfile("data_big5", "testbig5.sas7bdat", encoding = "cp950")
+        @test rs[1,1] == "我愛你"
+	# wlatin1 encoding , format on winxp ansi system 
+	rs = readfile("data_big5", "testbig5.sas7bdat")
+        @test decode(encode(rs[1,1],"cp1252"),"cp950") == "我愛你"
     end
 
     @testset "handler object" begin
