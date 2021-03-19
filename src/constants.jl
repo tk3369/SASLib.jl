@@ -117,12 +117,15 @@ const encoding_names = Dict(
     65 => "WINDOWS-1255",
     66 => "WINDOWS-1256",
     67 => "WINDOWS-1257",
+    118 => "CP950",
     119 => "EUC-TW",
-    123 => "BIG-5",
+    123 => "BIG5-HKSCS",
     125 => "GB18030",
+    126 => "CP936",
     134 => "EUC-JP",
     138 => "CP932",
-    140 => "EUC-KR"
+    140 => "EUC-KR",
+    141 => "CP949"
 )
 
 const index_rowSizeIndex = 0
