@@ -1,7 +1,7 @@
 name = "SASLib"
 uuid = "df8f2f22-cfef-5733-af3f-96770d497d85"
 authors = ["Tom Kwong <tk3369@gmail.com>"]
-version = "1.2.1"
+version = "1.3.0"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -15,7 +15,7 @@ TabularDisplay = "3eeacb1d-13c2-54cc-9b18-30c86af3cadb"
 IteratorInterfaceExtensions = "0.1.1, 1"
 StringEncodings = "0.3"
 TableTraits = "0.4.1, 1"
-Tables = "1.0"
+Tables = "1"
 TabularDisplay = "1"
 julia = "1"
 
