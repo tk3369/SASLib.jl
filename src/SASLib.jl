@@ -21,7 +21,7 @@ include("ResultSet.jl")
 include("Metadata.jl")
 include("tables.jl")
 
-function _open(config::ReaderConfig) 
+function _open(config::ReaderConfig)
     # println("Opening $(config.filename)")
     handler = Handler(config)
     init_handler(handler)
@@ -34,7 +34,7 @@ function _open(config::ReaderConfig)
 end
 
 """
-open(filename::AbstractString; 
+open(filename::AbstractString;
         encoding::AbstractString = "",
         convert_dates::Bool = true,
         include_columns::Vector = [],
@@ -47,7 +47,7 @@ open(filename::AbstractString;
 Open a SAS7BDAT data file.  Returns a `SASLib.Handler` object that can be used in
 the subsequent `SASLib.read` and `SASLib.close` functions.
 """
-function open(filename::AbstractString; 
+function open(filename::AbstractString;
         encoding::AbstractString = "",
         convert_dates::Bool = true,
         include_columns::Vector = [],
@@ -56,18 +56,18 @@ function open(filename::AbstractString;
         number_array_fn::Dict = Dict(),
         column_types::Dict = Dict{Symbol,Type}(),
         verbose_level::Int64 = 1)
-    return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-        include_columns, exclude_columns, string_array_fn, number_array_fn, 
+    return _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates,
+        include_columns, exclude_columns, string_array_fn, number_array_fn,
         column_types, verbose_level))
 end
 
 """
-read(handler::Handler, nrows=0) 
+read(handler::Handler, nrows=0)
 
-Read data from the `handler` (see `SASLib.open`).  If `nrows` is not specified, 
+Read data from the `handler` (see `SASLib.open`).  If `nrows` is not specified,
 read the entire file content.  When called again, fetch the next `nrows` rows.
 """
-function read(handler::Handler, nrows=0) 
+function read(handler::Handler, nrows=0)
     # println("Reading $(handler.config.filename)")
     elapsed = @elapsed result = read_chunk(handler, nrows)
     elapsed = round(elapsed, digits = 5)
@@ -76,22 +76,22 @@ function read(handler::Handler, nrows=0)
 end
 
 """
-close(handler::Handler) 
+close(handler::Handler)
 
 Close the `handler` object.  This function effectively closes the
-underlying iostream.  It must be called after the program 
+underlying iostream.  It must be called after the program
 finished reading data.
 
-This function is needed only when `SASLib.open` and `SASLib.read` 
+This function is needed only when `SASLib.open` and `SASLib.read`
 functions are used instead of the more convenient `readsas` function.
 """
-function close(handler::Handler) 
+function close(handler::Handler)
     # println("Closing $(handler.config.filename)")
     Base.close(handler.io)
 end
 
 """
-readsas(filename::AbstractString; 
+readsas(filename::AbstractString;
         encoding::AbstractString = "",
         convert_dates::Bool = true,
         include_columns::Vector = [],
@@ -101,7 +101,7 @@ readsas(filename::AbstractString;
         column_types::Dict = Dict{Symbol,Type}(),
         verbose_level::Int64 = 1)
 
-Read a SAS7BDAT file.  
+Read a SAS7BDAT file.
 
 `Encoding` may be used as an override only if the file cannot be read
 using the encoding specified in the file.  If you receive a warning
@@ -109,28 +109,28 @@ about unknown encoding then check your system's supported encodings from
 the iconv library e.g. using the `iconv --list` command.
 
 If `convert_dates == false` then no conversion is made
-and you will get the number of days for Date columns (or number of 
-seconds for DateTime columns) since 1-JAN-1960.  
+and you will get the number of days for Date columns (or number of
+seconds for DateTime columns) since 1-JAN-1960.
 
-By default, all columns will be read.  If you only need a subset of the 
+By default, all columns will be read.  If you only need a subset of the
 columns, you may specify
-either `include_columns` or `exclude_columns` but not both.  They are just 
+either `include_columns` or `exclude_columns` but not both.  They are just
 arrays of columns indices or symbols e.g. [1, 2, 3] or [:employeeid, :firstname, :lastname]
 
 String columns by default are stored in `SASLib.ObjectPool`, which is an array-like
 structure that is more space-efficient when there is a high number of duplicate
-values.  However, if there are too many unique items (> 10%) then it's automatically 
+values.  However, if there are too many unique items (> 10%) then it's automatically
 switched over to a regular Array.
 
-If you wish to use a different kind of array, you can pass your 
+If you wish to use a different kind of array, you can pass your
 array constructor via the `string_array_fn` dict.  The constructor must
 take a single integer argument that represents the size of the array.
-The convenient `REGULAR_STR_ARRAY` function can be used if you just want to 
+The convenient `REGULAR_STR_ARRAY` function can be used if you just want to
 use the regular Array{String} type.
 
 For examples,
 `string_array_fn = Dict(:column1 => (n)->CategoricalArray{String}((n,)))`
-or  
+or
 `string_array_fn = Dict(:column1 => REGULAR_STR_ARRAY)`.
 
 For numeric columns, you may specify your own array constructors using
@@ -138,13 +138,13 @@ the `number_array_fn` parameter.  Perhaps you have a different kind of
 array to store the values e.g. SharedArray.
 
 Specify `column_type` argument if any conversion is required.  It should
-be a Dict, mapping column symbol to a data type.  
+be a Dict, mapping column symbol to a data type.
 
 For debugging purpose, `verbose_level` may be set to a value higher than 1.
-Verbose level 0 will output nothing to the console, essentially a total quiet 
+Verbose level 0 will output nothing to the console, essentially a total quiet
 option.
 """
-function readsas(filename::AbstractString; 
+function readsas(filename::AbstractString;
         encoding::AbstractString = "",
         convert_dates::Bool = true,
         include_columns::Vector = [],
@@ -155,8 +155,8 @@ function readsas(filename::AbstractString;
         verbose_level::Int64 = 1)
     handler = nothing
     try
-        handler = _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates, 
-            include_columns, exclude_columns, string_array_fn, number_array_fn, 
+        handler = _open(ReaderConfig(filename, encoding, default_chunk_size, convert_dates,
+            include_columns, exclude_columns, string_array_fn, number_array_fn,
             column_types, verbose_level))
         return read(handler)
     finally
@@ -181,7 +181,7 @@ end
 # Read a single signed integer of the given width (1, 2, 4 or 8).
 @inline function _read_int(handler, offset, width)
     b = _read_bytes(handler, offset, width)
-    width == 1 ? Int64(b[1]) : 
+    width == 1 ? Int64(b[1]) :
         (handler.file_endianness == :BigEndian ? convertint64B(b...) : convertint64L(b...))
 end
 
@@ -223,7 +223,7 @@ function read_header(handler)
         throw(FileFormatError("magic number mismatch (not a SAS file?)"))
     end
     # println("good magic number")
-    
+
     # Get alignment debugrmation
     align1, align2 = 0, 0
     buf = _read_bytes(handler, align_1_offset, align_1_length)
@@ -263,28 +263,28 @@ function read_header(handler)
         handler.file_endianness = :BigEndian
     end
     # println2(handler, "file_endianness = $(handler.file_endianness)")
-    
+
     # Detect system-endianness and determine if byte swap will be required
     handler.sys_endianness = ENDIAN_BOM == 0x04030201 ? :LittleEndian : :BigEndian
     # println2(handler, "system endianess = $(handler.sys_endianness)")
 
     handler.byte_swap = handler.sys_endianness != handler.file_endianness
     # println2(handler, "byte_swap = $(handler.byte_swap)")
-        
+
     # Get encoding information
     buf = _read_bytes(handler, encoding_offset, 1)[1]
     if haskey(encoding_names, buf)
         handler.file_encoding = "$(encoding_names[buf])"
     else
         handler.file_encoding = FALLBACK_ENCODING         # hope for the best
-        handler.config.verbose_level > 0 &&  
+        handler.config.verbose_level > 0 &&
             @warn("Unknown file encoding value ($buf), defaulting to $(handler.file_encoding)")
     end
     #println2(handler, "file_encoding = $(handler.file_encoding)")
 
     # User override for encoding
     if handler.config.encoding != ""
-        handler.config.verbose_level > 0 && 
+        handler.config.verbose_level > 0 &&
             @warn("Encoding has been overridden from $(handler.file_encoding) to $(handler.config.encoding)")
         handler.file_encoding = handler.config.encoding
     end
@@ -295,11 +295,11 @@ function read_header(handler)
         ENCODINGS_OK_WITH_BASE_TRANSCODER
     # println2(handler, "Use base encoder = $(handler.use_base_transcoder)")
 
-    # prepare string decoder if needed 
+    # prepare string decoder if needed
     if !handler.use_base_transcoder
         println2(handler, "creating string buffer/decoder for with $(handler.file_encoding)")
         handler.string_decoder_buffer = IOBuffer()
-        handler.string_decoder = StringDecoder(handler.string_decoder_buffer, 
+        handler.string_decoder = StringDecoder(handler.string_decoder_buffer,
             handler.file_encoding)
     end
 
@@ -329,7 +329,7 @@ function read_header(handler)
     x = _read_float(handler, date_modified_offset + align1, date_modified_length)
     handler.date_modified = epoch + Millisecond(round(x * 1000))
     # println("date modified = $(x) => $(handler.date_modified)")
-    
+
     handler.header_length = _read_int(handler, header_size_offset + align1, header_size_length)
 
     # Read the rest of the header into cached_page.
@@ -352,7 +352,7 @@ function read_header(handler)
 
     handler.page_count = _read_int(handler, page_count_offset + align1, page_count_length)
     # println("page_count = $(handler.page_count)")
-    
+
     buf = _read_bytes(handler, sas_release_offset + total_align, sas_release_length)
     handler.sas_release = transcode_metadata(brstrip(buf, zero_space))
     # println2(handler, "SAS Release = $(handler.sas_release)")
@@ -368,7 +368,7 @@ function read_header(handler)
     buf = _read_bytes(handler, os_version_number_offset + total_align, os_version_number_length)
     handler.os_version = transcode_metadata(brstrip(buf, zero_space))
     # println2(handler, "os_version = $(handler.os_version)")
-    
+
     buf = _read_bytes(handler, os_name_offset + total_align, os_name_length)
     buf = brstrip(buf, zero_space)
     if length(buf) > 0
@@ -380,7 +380,7 @@ function read_header(handler)
     # println("os_name = $(handler.os_name)")
 end
 
-# Read all pages to find metadata 
+# Read all pages to find metadata
 # TODO however, this is inefficient since it reads a lot of data from disk
 # TODO can we tell if metadata is complete and break out of loop early?
 function read_file_metadata(handler)
@@ -415,7 +415,7 @@ end
 
 function _process_page_meta(handler)
     # println3(handler, "IN: _process_page_meta")
-    _read_page_header(handler)  
+    _read_page_header(handler)
     pt = vcat([page_meta_type, page_amd_type], page_mix_types)
     # println("  pt=$pt handler.current_page_type=$(handler.current_page_type)")
     if handler.current_page_type in pt
@@ -465,7 +465,7 @@ function _process_page_metadata(handler)
             continue
         end
         subheader_signature = _read_subheader_signature(handler, pointer.offset)
-        subheader_index = 
+        subheader_index =
             _get_subheader_index(handler, subheader_signature, pointer.compression, pointer.shtype)
         # println3(handler, "  subheader_index = $subheader_index")
         if subheader_index == index_end_of_header
@@ -479,41 +479,41 @@ function _process_subheader_pointers(handler, offset, subheader_pointer_index)
     # println3(handler, "IN: _process_subheader_pointers")
     # println3(handler, "  offset=$offset (beginning of the pointers array)")
     # println3(handler, "  subheader_pointer_index=$subheader_pointer_index")
-    
+
     # deference the array by index
     # handler.subheader_pointer_length is 12 or 24 (variable SL)
     total_offset = (offset + handler.subheader_pointer_length * subheader_pointer_index)
     # println3(handler, "  handler.subheader_pointer_length=$(handler.subheader_pointer_length)")
     # println3(handler, "  total_offset=$total_offset")
-    
+
     # handler.int_length is either 4 or 8 (based on u64 flag)
-    # subheader_offset contains where to find the subheader 
+    # subheader_offset contains where to find the subheader
     subheader_offset = _read_int(handler, total_offset, handler.int_length)
     # println3(handler, "  subheader_offset=$subheader_offset")
     total_offset += handler.int_length
     # println3(handler, "  total_offset=$total_offset")
-    
+
     # subheader_length contains the length of the subheader (variable QL)
-    # QL is sometimes zero, which indicates that no data is referenced by the 
+    # QL is sometimes zero, which indicates that no data is referenced by the
     # corresponding subheader pointer. When this occurs, the subheader pointer may be ignored.
     subheader_length = _read_int(handler, total_offset, handler.int_length)
     # println3(handler, "  subheader_length=$subheader_length")
     total_offset += handler.int_length
     # println3(handler, "  total_offset=$total_offset")
-    
+
     # subheader_compression contains the compression flag (variable COMP)
     subheader_compression = _read_int(handler, total_offset, 1)
     # println3(handler, "  subheader_compression=$subheader_compression")
     total_offset += 1
     # println3(handler, "  total_offset=$total_offset")
-    
-    # subheader_type contains the subheader type (variable ST)    
+
+    # subheader_type contains the subheader type (variable ST)
     subheader_type = _read_int(handler, total_offset, 1)
 
     return SubHeaderPointer(
-                subheader_offset, 
-                subheader_length, 
-                subheader_compression, 
+                subheader_offset,
+                subheader_length,
+                subheader_compression,
                 subheader_type)
 
 end
@@ -551,7 +551,7 @@ function _process_subheader(handler, subheader_index, pointer)
     # println3(handler, "IN: _process_subheader")
     offset = pointer.offset
     length = pointer.length
-    
+
     # println3(handler, "  $(tostring(pointer))")
 
     if subheader_index == index_rowSizeIndex
@@ -627,7 +627,7 @@ end
 
 function _process_columntext_subheader(handler, offset, length)
     # println3(handler, "IN: _process_columntext_subheader")
-    
+
     p = offset + handler.int_length
     text_block_size = _read_int(handler, p, text_block_size_length)
     # println3(handler, "  text_block_size=$text_block_size")
@@ -647,13 +647,13 @@ function _process_columntext_subheader(handler, offset, length)
     # println("  content=$(handler.column_names_strings)")
     # println3(handler, "  content=$(size(handler.column_names_strings, 2))")
 
-    # figure out some metadata if this is the first column 
+    # figure out some metadata if this is the first column
     if size(handler.column_names_strings, 2) == 1
 
-        # check if there's compression signature 
-        if contains(cname_raw, rle_compression) 
+        # check if there's compression signature
+        if contains(cname_raw, rle_compression)
             compression_method = compression_method_rle
-        elseif contains(cname_raw, rdc_compression) 
+        elseif contains(cname_raw, rdc_compression)
             compression_method = compression_method_rdc
         else
             compression_method = compression_method_none
@@ -707,28 +707,28 @@ function _process_columntext_subheader(handler, offset, length)
         end
     end
 end
-        
+
 
 function _process_columnname_subheader(handler, offset, length)
     # println3(handler, "IN: _process_columnname_subheader")
     int_len = handler.int_length
     # println(" int_len=$int_len")
-    # println(" offset=$offset")    
+    # println(" offset=$offset")
     offset += int_len
     # println(" offset=$offset (after adding int_len)")
     column_name_pointers_count = fld(length - 2 * int_len - 12, 8)
     # println(" column_name_pointers_count=$column_name_pointers_count")
     for i in 1:column_name_pointers_count
-        text_subheader = offset + column_name_pointer_length * 
+        text_subheader = offset + column_name_pointer_length *
             i + column_name_text_subheader_offset
         # println(" i=$i text_subheader=$text_subheader")
-        col_name_offset = offset + column_name_pointer_length * 
+        col_name_offset = offset + column_name_pointer_length *
             i + column_name_offset_offset
         # println(" i=$i col_name_offset=$col_name_offset")
-        col_name_length = offset + column_name_pointer_length * 
+        col_name_length = offset + column_name_pointer_length *
             i + column_name_length_offset
         # println(" i=$i col_name_length=$col_name_length")
-            
+
         idx = _read_int(handler,
             text_subheader, column_name_text_subheader_length)
         # println(" i=$i idx=$idx")
@@ -738,7 +738,7 @@ function _process_columnname_subheader(handler, offset, length)
         col_len = _read_int(handler,
             col_name_length, column_name_length_length)
         # println(" i=$i col_len=$col_len")
-            
+
         cnp = ColumnNamePointer(idx + 1, col_offset, col_len)
         push!(handler.column_name_pointers, cnp)
     end
@@ -819,7 +819,7 @@ function _process_format_subheader(handler, offset, length)
     # column_label = label_names[label_start+1: label_start + label_len]
     # println3(handler, "  column_label=$column_label decoded=$(transcode_metadata(column_label))")
 
-    # current_column_number = size(handler.columns, 2) 
+    # current_column_number = size(handler.columns, 2)
     # println3(handler, "  current_column_number=$current_column_number")
 
     # col = Column(
@@ -845,7 +845,7 @@ function read_chunk(handler, nrows=0)
         @warn("File has no data")
         return ResultSet()
     end
-    
+
     # println("IN: read_chunk")
     #println(handler.config)
     if (nrows == 0) && (handler.config.chunk_size > 0)
@@ -855,21 +855,21 @@ function read_chunk(handler, nrows=0)
     end
     # println("nrows = $nrows")
 
-    # println("row_count = $(handler.row_count)")    
+    # println("row_count = $(handler.row_count)")
     m = handler.row_count - handler.current_row_in_file_index
     if nrows > m
         nrows = m
     end
-    # println("nrows = $(nrows)")   
-    #info("Reading $nrows x $(length(handler.column_types)) data set") 
-    
+    # println("nrows = $(nrows)")
+    #info("Reading $nrows x $(length(handler.column_types)) data set")
+
     # TODO not the most efficient but normally it should be ok for non-wide tables
     nd = count(x -> x == column_type_decimal, handler.column_types)
     ns = count(x -> x == column_type_string,  handler.column_types)
     # println("nd = $nd (number of decimal columns)")
     # println("ns = $ns (number of string columns)")
 
-    # ns > 0 && !handler.use_base_transcoder && 
+    # ns > 0 && !handler.use_base_transcoder &&
     #     info("Note: encoding incompatible with UTF-8, reader will take more time")
 
     populate_column_indices(handler)
@@ -881,17 +881,17 @@ function read_chunk(handler, nrows=0)
         if ty == column_type_decimal
             handler.byte_chunk[name] = fill(UInt8(0), Int64(8 * nrows)) # 8-byte values
         elseif ty == column_type_string
-            handler.string_chunk[name] = createstrarray(handler, name, nrows) 
+            handler.string_chunk[name] = createstrarray(handler, name, nrows)
         else
             throw(FileFormatError("unknown column type: $ty for column $name"))
         end
     end
 
-    # don't do this or else the state is polluted if user wants to 
+    # don't do this or else the state is polluted if user wants to
     # read lines separately.
     # handler.current_page = 0
     handler.current_row_in_chunk_index = 0
-    
+
     perf_read_data = @elapsed(read_data(handler, nrows))
     perf_chunk_to_data_frame = @elapsed(rslt = _chunk_to_dataframe(handler, nrows))
 
@@ -901,7 +901,7 @@ function read_chunk(handler, nrows=0)
     end
 
     column_symbols = [sym for (k, sym, ty) in handler.column_indices]
-    return ResultSet([rslt[s] for s in column_symbols], column_symbols, 
+    return ResultSet([rslt[s] for s in column_symbols], column_symbols,
         (nrows, length(column_symbols)))
 end
 
@@ -912,11 +912,11 @@ function createstrarray(handler, column_symbol, nrows)
     elseif haskey(handler.config.string_array_fn, :_all_)
         handler.config.string_array_fn[:_all_](nrows)
     else
-        if nrows <= 2 << 7 
+        if nrows + 1 < 2 << 7
             ObjectPool{String, UInt8}(EMPTY_STRING, nrows)
-        elseif nrows <= 2 << 15
+        elseif nrows < 2 << 15
             ObjectPool{String, UInt16}(EMPTY_STRING, nrows)
-        elseif nrows <= 2 << 31
+        elseif nrows < 2 << 31
             ObjectPool{String, UInt32}(EMPTY_STRING, nrows)
         else
             ObjectPool{String, UInt64}(EMPTY_STRING, nrows)
@@ -972,7 +972,7 @@ function my_read_next_page(handler)
     handler.current_row_in_page_index = 0
 end
 
-# convert Float64 value into Date object 
+# convert Float64 value into Date object
 function date_from_float(x::Vector{Float64})
     v = Vector{Union{Date, Missing}}(undef, length(x))
     for i in 1:length(x)
@@ -981,7 +981,7 @@ function date_from_float(x::Vector{Float64})
     v
 end
 
-# convert Float64 value into DateTime object 
+# convert Float64 value into DateTime object
 function datetime_from_float(x::Vector{Float64})
     v = Vector{Union{DateTime, Missing}}(undef, length(x))
     for i in 1:length(x)
@@ -995,7 +995,7 @@ end
 # The resulting dictionary uses column symbols as the key.
 function _chunk_to_dataframe(handler, nrows)
     # println("IN: _chunk_to_dataframe")
-    
+
     n = handler.current_row_in_chunk_index
     m = handler.current_row_in_file_index
     rslt = Dict()
@@ -1046,7 +1046,7 @@ function convert_column_type_if_needed!(handler, rslt, name)
                 @warn("Unable to convert column to type $type_wanted, error=$ex")
             end
         end
-    end    
+    end
 end
 
 # Simple loop that reads data row-by-row.
@@ -1075,7 +1075,7 @@ function readline(handler)
     # println("IN: readline")
 
     subheader_pointer_length = handler.subheader_pointer_length
-    
+
     # If there is no page, go to the end of the header and read a page.
     # TODO commented out for performance reason... do we really need this?
     # if handler.cached_page == []
@@ -1104,7 +1104,7 @@ function readline(handler)
                 end
                 continue
             end
-            current_subheader_pointer = 
+            current_subheader_pointer =
                 handler.current_page_data_subheader_pointers[handler.current_row_in_page_index+1]
                 # println3(handler, "    current_subheader_pointer = $(current_subheader_pointer)")
                 # println3(handler, "    handler.compression = $(handler.compression)")
@@ -1124,7 +1124,7 @@ function readline(handler)
                 handler.current_page_type == page_mix_types[2])
             # println3(handler, "  page type == page_mix_types_1/2")
 
-            offset = handler.page_bit_offset 
+            offset = handler.page_bit_offset
             offset += subheader_pointers_offset
             offset += (handler.current_page_subheaders_count * subheader_pointer_length)
 
@@ -1132,7 +1132,7 @@ function readline(handler)
             offset += align_correction
 
             # hack for stat_transfer files
-            if align_correction == 4 && handler.vendor == VENDOR_STAT_TRANSFER 
+            if align_correction == 4 && handler.vendor == VENDOR_STAT_TRANSFER
                 # println3(handler, "alignment hack, vendor=$(handler.vendor) align_correction=$align_correction")
                 offset -= align_correction
             end
@@ -1188,7 +1188,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
     #     handler.cached_page[offset:offset + length], dtype=np.uint8)
     source = handler.cached_page[offset+1:offset+length]
 
-    # TODO decompression 
+    # TODO decompression
     # if handler.decompress != NULL and (length < handler.row_length)
     # println("  length=$length")
     # println("  handler.row_length=$(handler.row_length)")
@@ -1210,10 +1210,10 @@ function process_byte_array_with_data(handler, offset, length, compression)
 
     current_row = handler.current_row_in_chunk_index
     s = 8 * current_row
-      
+
     # TODO PERF there's not reason to deference by name everytime.
     #    Ideally, we can still go by the result's column index
-    #    and then only at the very end (outer loop) we assign them to 
+    #    and then only at the very end (outer loop) we assign them to
     #    the column symbols
     @inbounds for (k, name, ty) in handler.column_indices
         lngt = handler.column_data_lengths[k]
@@ -1253,7 +1253,7 @@ function process_byte_array_with_data(handler, offset, length, compression)
                 handler.string_chunk[name] = ar
             end
             pos = lastcharpos(source, start, lngt)
-            @inbounds ar[current_row+1] = 
+            @inbounds ar[current_row+1] =
                 # rstrip2(transcode_data(handler, source, start+1, start+lngt, lngt))
                 transcode_data(handler, source, start+1, start+pos, pos)
         end
@@ -1267,17 +1267,17 @@ end
 # Notes about performance enhancement related to stripping off space characters.
 #
 # Apparently SAS always use 0x20 (space) even for non-ASCII encodings
-# but what if 0x20 happens to be there as part of a multi-byte encoding? 
+# but what if 0x20 happens to be there as part of a multi-byte encoding?
 # ```
 # julia> decode([0x02, 0x20], "UTF-16")
 # "Ƞ"
 # ````
-# 
+#
 # Knowing that we can only understand a certain set of char encodings as in
 # the constants.jl file, we just need to make sure that the ones that we
 # support does not use 0x20 as part of any multi-byte chars.
-# 
-# Seems ok. Some info available at 
+#
+# Seems ok. Some info available at
 # https://www.debian.org/doc/manuals/intro-i18n/ch-codes.en.html
 #
 # find the last char position that is not space
@@ -1295,14 +1295,14 @@ end
 # TODO possible issue with the 7-bit check... maybe not all encodings are ascii compatible for 7-bit values?
 # Use unsafe_string to avoid bounds check for performance reason
 # Use custom decode_string function with our own decoder/decoder buffer to avoid unncessary objects creation
-@inline transcode_data(handler::Handler, source::Vector{UInt8}, startidx::Int64, endidx::Int64, lngt::Int64) = 
-    handler.use_base_transcoder || seven_bit_data(source, startidx, endidx) ? 
-        unsafe_string(pointer(source) + startidx - 1, lngt) : 
+@inline transcode_data(handler::Handler, source::Vector{UInt8}, startidx::Int64, endidx::Int64, lngt::Int64) =
+    handler.use_base_transcoder || seven_bit_data(source, startidx, endidx) ?
+        unsafe_string(pointer(source) + startidx - 1, lngt) :
         decode_string(source, startidx, endidx, handler.string_decoder_buffer, handler.string_decoder)
         #decode_string2(source[startidx:endidx], handler.file_encoding)
 
 # metadata is always ASCII-based (I think)
-@inline transcode_metadata(bytes::Vector{UInt8}) = 
+@inline transcode_metadata(bytes::Vector{UInt8}) =
     Base.transcode(String, bytes)
 
 # determine if string data contains only 7-bit characters
@@ -1357,7 +1357,7 @@ function rle_decompress(output_len,  input::Vector{UInt8})
     rpos = 1
     while ipos <= input_len
         control = input[ipos]
-        ipos += 1 
+        ipos += 1
         command = (control & 0xF0) >> 4
         dlen    = (control & 0x0F)
         copy_len = 0
@@ -1534,7 +1534,7 @@ end
 logdebug = println
 
 # string representation of the SubHeaderPointer structure
-# function tostring(x::SubHeaderPointer) 
+# function tostring(x::SubHeaderPointer)
 #   "<SubHeaderPointer: offset=$(x.offset), length=$(x.length), compression=$(x.compression), type=$(x.shtype)>"
 # end
 
@@ -1542,13 +1542,13 @@ logdebug = println
 # This is useful for debugging purpose especially during incremental reads.
 # function currentpos(handler)
 #     d = Dict()
-#     if isdefined(handler, :current_row_in_file_index) 
+#     if isdefined(handler, :current_row_in_file_index)
 #         d[:current_row_in_file] = handler.current_row_in_file_index
 #     end
-#     if isdefined(handler, :current_row_in_page_index) 
+#     if isdefined(handler, :current_row_in_page_index)
 #         d[:current_row_in_page] = handler.current_row_in_page_index
 #     end
-#     if isdefined(handler, :current_row_in_chunk_index) 
+#     if isdefined(handler, :current_row_in_chunk_index)
 #         d[:current_row_in_chunk] = handler.current_row_in_chunk_index
 #     end
 #     return d
@@ -1556,7 +1556,7 @@ logdebug = println
 
 # case insensitive column mapping
 Base.lowercase(s::Symbol) = Symbol(lowercase(String(s)))
-case_insensitive_in(s::Symbol, ar::AbstractArray) = 
+case_insensitive_in(s::Symbol, ar::AbstractArray) =
     lowercase(s) in [x isa Symbol ? lowercase(x) : x for x in ar]
 
 # fill column indices as a dictionary (key = column index, value = column symbol)
@@ -1570,14 +1570,14 @@ function populate_column_indices(handler)
     # println("handler.column_types = $(handler.column_types) len=$(length(handler.column_types))")
     for j in 1:length(handler.column_symbols)
         name = handler.column_symbols[j]
-        if inflag 
-            if j in handler.config.include_columns || 
+        if inflag
+            if j in handler.config.include_columns ||
                     case_insensitive_in(name, handler.config.include_columns)
                 push!(handler.column_indices, (j, name, handler.column_types[j]))
                 push!(processed, lowercase(name))
             end
-        elseif exflag 
-            if !(j in handler.config.exclude_columns || 
+        elseif exflag
+            if !(j in handler.config.exclude_columns ||
                     case_insensitive_in(name, handler.config.exclude_columns))
                 push!(handler.column_indices, (j, name, handler.column_types[j]))
             else
@@ -1587,13 +1587,13 @@ function populate_column_indices(handler)
             push!(handler.column_indices, (j, name, handler.column_types[j]))
         end
     end
-    if inflag && length(processed) != length(handler.config.include_columns) 
+    if inflag && length(processed) != length(handler.config.include_columns)
         diff = setdiff(handler.config.include_columns, processed)
         for c in diff
             @warn("Unknown include column $c")
         end
     end
-    if exflag && length(processed) != length(handler.config.exclude_columns) 
+    if exflag && length(processed) != length(handler.config.exclude_columns)
         diff = setdiff(handler.config.exclude_columns, processed)
         for c in diff
             @warn("Unknown exclude column $c")
@@ -1609,14 +1609,14 @@ function _determine_vendor(handler::Handler)
     (major, minor, revision) = parse.(Int, (major, minor, revision))
 
     if major == 9 && minor == 0 && revision == 0
-        # A bit of a hack, but most SAS installations are running a minor update 
+        # A bit of a hack, but most SAS installations are running a minor update
         handler.vendor = VENDOR_STAT_TRANSFER
     else
         handler.vendor = VENDOR_SAS
     end
 end
 
-# Populate column names after all meta info is read 
+# Populate column names after all meta info is read
 function populate_column_names(handler)
     for cnp in handler.column_name_pointers
         if cnp.index > length(handler.column_names_strings)
@@ -1651,7 +1651,7 @@ end
 # Go back and read the first page again and be ready for read
 # This is needed after all metadata is written and the system needs to rewind
 function read_first_page(handler)
-    seek(handler.io, handler.header_length)  
+    seek(handler.io, handler.header_length)
     my_read_next_page(handler)
 end
 

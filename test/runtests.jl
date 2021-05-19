@@ -59,6 +59,13 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test_throws BoundsError z[1:300] = 1:300
     end
 
+    @testset "object pool datatype" begin
+        println("Testing object pool datatype selection...")
+        # should not error when nrow = 255 due to incorrect datatype selected for ObjectPool
+        s = SASLib.readsas("data_objectpool/pooltest255.sas7bdat")
+        @test size(s, 1) == 255
+    end
+
     @testset "case insensitive dict" begin
         function testdict(lowercase_key, mixedcase_key, second_lowercase_key)
 
@@ -332,7 +339,7 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         # @test result[:file_encoding] == "US-ASCII"
         @test rs[:Column42][3] == "dog"
     end
-	
+
     @testset "taiwan encodings" begin
 	# check cp950 support , the most prevalent encoding on traditional Han characters ;compatible with big5-2003
 	@test encode("€","CP950")==[0xa3, 0xe1]
@@ -341,10 +348,10 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
 	# cp950 encoding
         rs = readfile("data_big5", "cp950.sas7bdat")
         @test rs[1,1] == "我愛你"
-	# wlatin1 encoding , this works on winxp ansi system but not in new unicode system 
+	# wlatin1 encoding , this works on winxp ansi system but not in new unicode system
         rs = readfile("data_big5", "testbig5.sas7bdat", encoding = "cp950")
         @test rs[1,1] == "我愛你"
-	# wlatin1 encoding , format on winxp ansi system 
+	# wlatin1 encoding , format on winxp ansi system
 	rs = readfile("data_big5", "testbig5.sas7bdat")
         @test decode(encode(rs[1,1],"cp1252"),"cp950") == "我愛你"
     end
