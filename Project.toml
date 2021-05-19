@@ -1,7 +1,7 @@
 name = "SASLib"
 uuid = "df8f2f22-cfef-5733-af3f-96770d497d85"
 authors = ["Tom Kwong <tk3369@gmail.com>"]
-version = "1.3.0"
+version = "1.3.1"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
