@@ -58,6 +58,13 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test_throws BoundsError z[1:300] = 1:300
     end
 
+    @testset "object pool datatype" begin
+        println("Testing object pool datatype selection...")
+        # should not error when nrow = 255 due to incorrect datatype selected for ObjectPool
+        s = SASLib.readsas("data_objectpool/pooltest255.sas7bdat")
+        @test size(s, 1) == 255
+    end
+
     @testset "case insensitive dict" begin
         function testdict(lowercase_key, mixedcase_key, second_lowercase_key)
 
