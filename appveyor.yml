@@ -1,6 +1,9 @@
-# Explicitly set build mode to script
+# Script mode configuration
+build: off
+
+# Build script
 build_script:
-  - ps: echo "Skipping MSBuild phase"
+  - ps: Write-Host "Starting build script..."
 
 # Environment setup
 environment:
