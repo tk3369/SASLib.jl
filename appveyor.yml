@@ -1,18 +1,22 @@
-build: off  # Disable MSBuild since this is a Julia package
+# Disable MSBuild and use script mode
+build: off
+
+init:
+  - cmd: set PATH=C:\julia\bin;%PATH%
 
 environment:
   matrix:
-  - julia_version: 1.0
-  - julia_version: 1
-  - julia_version: nightly
+  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1.6/julia-1.6.7-win64.exe"
+  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1/julia-latest-win64.exe"
+  - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
+    JULIA_NIGHTLY: true
 
 platform:
-#  - x86 # 32-bit
-  - x64 # 64-bit
+  - x64  # 64-bit only
 
 matrix:
   allow_failures:
-  - julia_version: nightly
+  - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
 
 branches:
   only:
@@ -26,12 +30,24 @@ notifications:
     on_build_status_changed: false
 
 install:
-  - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/JuliaCI/Appveyor.jl/version-1/bin/install.ps1"))
+  - ps: |
+      $version = $env:JULIA_VERSION
+      if ($version -eq $null) { $version = "1.6.7" }
+      $is_nightly = $env:JULIA_NIGHTLY -eq "true"
+      $url = $env:JULIA_URL
+      if ($url -eq $null) {
+          $url = "https://julialang-s3.julialang.org/bin/winnt/x64/$($version.Substring(0, $version.LastIndexOf('.')))/julia-$version-win64.exe"
+      }
+      $installer = (Join-Path $pwd "julia-installer.exe")
+      (new-object net.webclient).DownloadFile($url, $installer)
+      Start-Process -FilePath $installer -ArgumentList "/S /D=$pwd\julia" -Wait
 
 build_script:
+  - SET PATH=%CD%\julia\bin;%PATH%
   - echo "%JL_BUILD_SCRIPT%"
-  - C:\julia\bin\julia -e "%JL_BUILD_SCRIPT%"
+  - julia -e "%JL_BUILD_SCRIPT%"
 
 test_script:
+  - SET PATH=%CD%\julia\bin;%PATH%
   - echo "%JL_TEST_SCRIPT%"
-  - C:\julia\bin\julia -e "%JL_TEST_SCRIPT%"
+  - julia -e "%JL_TEST_SCRIPT%"
