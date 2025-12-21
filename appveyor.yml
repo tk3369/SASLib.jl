@@ -1,22 +1,21 @@
-# Disable MSBuild and use script mode
-build: off
+# Explicitly set build mode to script
+build_script:
+  - ps: echo "Skipping MSBuild phase"
 
-init:
-  - cmd: set PATH=C:\julia\bin;%PATH%
-
+# Environment setup
 environment:
   matrix:
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1.6/julia-1.6.7-win64.exe"
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1/julia-latest-win64.exe"
-  - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
-    JULIA_NIGHTLY: true
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1.6/julia-1.6.7-win64.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1/julia-latest-win64.exe"
+    - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
+      JULIA_NIGHTLY: "true"
 
 platform:
-  - x64  # 64-bit only
+  - x64
 
 matrix:
   allow_failures:
-  - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
+    - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
 
 branches:
   only:
@@ -41,11 +40,6 @@ install:
       $installer = (Join-Path $pwd "julia-installer.exe")
       (new-object net.webclient).DownloadFile($url, $installer)
       Start-Process -FilePath $installer -ArgumentList "/S /D=$pwd\julia" -Wait
-
-build_script:
-  - SET PATH=%CD%\julia\bin;%PATH%
-  - echo "%JL_BUILD_SCRIPT%"
-  - julia -e "%JL_BUILD_SCRIPT%"
 
 test_script:
   - SET PATH=%CD%\julia\bin;%PATH%
