@@ -963,11 +963,14 @@ function _read_next_page_content(handler)
     return false
 end
 
-# test -- copied from _read_next_page_content
+# Read the next page and prepare for processing
 function my_read_next_page(handler)
+    handler.current_page_data_subheader_pointers = []  # Reset subheader pointers
     handler.current_page += 1
-    handler.current_page_data_subheader_pointers = []
     handler.cached_page = Base.read(handler.io, handler.page_length)
+    if isempty(handler.cached_page)
+        return
+    end
     _read_page_header(handler)
     handler.current_row_in_page_index = 0
 end
@@ -1651,8 +1654,22 @@ end
 # Go back and read the first page again and be ready for read
 # This is needed after all metadata is written and the system needs to rewind
 function read_first_page(handler)
+    # Reset to the beginning of the file
+    seek(handler.io, 0)
+    
+    # Read and process the header again to ensure consistent state
+    read_header(handler)
+    
+    # Seek to the first data page (after header)
     seek(handler.io, handler.header_length)
+    
+    # Read the first page and process its metadata
     my_read_next_page(handler)
+    
+    # Process the page's metadata if it's a meta page
+    if handler.current_page_type == page_meta_type
+        _process_page_metadata(handler)
+    end
 end
 
 # Initialize handler object
