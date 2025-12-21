@@ -750,12 +750,11 @@ function _process_columnattributes_subheader(handler, offset, length)
     N = fld(length - 2 * int_len - 12, int_len + 8)
     # println("  column_attributes_vectors_count = $column_attributes_vectors_count")
 
+
+    # Initialize arrays with the correct size
     ty  = fill(column_type_none, N)
     len = fill(0::Int64, N)
     off = fill(0::Int64, N)
-    # handler.column_types = fill(column_type_none, column_attributes_vectors_count)
-    # handler.column_data_lengths = fill(0::Int64, column_attributes_vectors_count)
-    # handler.column_data_offsets = fill(0::Int64, column_attributes_vectors_count)
 
     for i in 0:N-1
         col_data_offset = (offset + int_len +
@@ -773,9 +772,15 @@ function _process_columnattributes_subheader(handler, offset, length)
         ty[j] = (x == 1) ? column_type_decimal : column_type_string
     end
 
-    push!(handler.column_types, ty...)
-    push!(handler.column_data_lengths, len...)
-    push!(handler.column_data_offsets, off...)
+    # Clear existing data and set the new values
+    empty!(handler.column_types)
+    append!(handler.column_types, ty)
+    
+    empty!(handler.column_data_lengths)
+    append!(handler.column_data_lengths, len)
+    
+    empty!(handler.column_data_offsets)
+    append!(handler.column_data_offsets, off)
 end
 
 function _process_columnlist_subheader(handler, offset, length)
