@@ -1,7 +1,6 @@
 # SASLib.jl
 
 [![Build Status](https://github.com/tk3369/SASLib.jl/workflows/CI/badge.svg)](https://github.com/tk3369/SASLib.jl/actions?query=workflow%3ACI)
-[![Appveyor Build status](https://ci.appveyor.com/api/projects/status/rdg5h988aifn7lvg/branch/master?svg=true)](https://ci.appveyor.com/project/tk3369/saslib-jl/branch/master)
 [![codecov.io](http://codecov.io/github/tk3369/SASLib.jl/coverage.svg?branch=master)](http://codecov.io/github/tk3369/SASLib.jl?branch=master)
 ![Project Status](https://img.shields.io/badge/status-mature-green)
 
