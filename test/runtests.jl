@@ -468,4 +468,29 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
         @test_throws SASLib.FileFormatError readsas("runtests.jl")
     end
 
+    # issue #79: datasets with deleted observations and/or index/primary key
+    @testset "deleted observations (issue #79)" begin
+        println("Testing deleted observations handling...")
+
+        # Datasets without deletes: full 2000 rows, any page-type variant must read cleanly
+        for fname in ["comp_ix.sas7bdat", "comp_pk.sas7bdat"]
+            rs = readfile("data_issue79", fname; verbose_level = 0)
+            @test size(rs, 1) == 2000
+        end
+
+        # Datasets with 10 deleted rows: must return exactly 1990 logical rows
+        for fname in ["nocomp_deletes.sas7bdat", "nocomp_pk_deletes.sas7bdat",
+                      "comp_deletes.sas7bdat",   "comp_pk_deletes.sas7bdat"]
+            rs = readfile("data_issue79", fname; verbose_level = 0)
+            @test size(rs, 1) == 1990  "$fname: expected 1990 rows, got $(size(rs,1))"
+        end
+
+        # Spot-check that rowno column contains values 1..1990 (no zero/deleted rows leaked)
+        rs = readfile("data_issue79", "nocomp_deletes.sas7bdat"; verbose_level = 0)
+        rownos = sort(rs[:rowno])
+        @test rownos[1]    ≈ 1.0
+        @test rownos[end]  ≈ 1990.0
+        @test all(rownos .> 0)
+    end
+
 end

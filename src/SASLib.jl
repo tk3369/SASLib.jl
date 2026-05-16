@@ -416,7 +416,7 @@ end
 function _process_page_meta(handler)
     # println3(handler, "IN: _process_page_meta")
     _read_page_header(handler)
-    pt = vcat([page_meta_type, page_amd_type], page_mix_types)
+    pt = vcat([page_meta_type, page_meta_type_last, page_amd_type], page_mix_types)
     # println("  pt=$pt handler.current_page_type=$(handler.current_page_type)")
     if handler.current_page_type in pt
         # println3(handler, "  current_page_type = $(current_page_type_str(handler))")
@@ -596,6 +596,8 @@ function _process_rowsize_subheader(handler, offset, length)
         offset + row_length_offset_multiplier * int_len, int_len)
     handler.row_count = _read_int(handler,
         offset + row_count_offset_multiplier * int_len, int_len)
+    handler.deleted_row_count = _read_int(handler,
+        offset + deleted_row_count_offset_multiplier * int_len, int_len)
     handler.col_count_p1 = _read_int(handler,
         offset + col_count_p1_multiplier * int_len, int_len)
     handler.col_count_p2 = _read_int(handler,
@@ -605,8 +607,16 @@ function _process_rowsize_subheader(handler, offset, length)
     handler.lcs = _read_int(handler, lcs_offset, 2)
     handler.lcp = _read_int(handler, lcp_offset, 2)
 
+    # Use the logical (non-deleted) row count for iteration. The physical count
+    # (NOBS) includes deleted observations; NLOBS = NOBS - DELOBS is the actual
+    # number of rows that should be returned to the caller.
+    if handler.deleted_row_count > 0 && handler.deleted_row_count < handler.row_count
+        handler.row_count -= handler.deleted_row_count
+    end
+
     # println3(handler, "  handler.row_length=$(handler.row_length)")
     # println3(handler, "  handler.row_count=$(handler.row_count)")
+    # println3(handler, "  handler.deleted_row_count=$(handler.deleted_row_count)")
     # println3(handler, "  handler.mix_page_row_count=$(handler.mix_page_row_count)")
 end
 
@@ -956,7 +966,7 @@ function _read_next_page_content(handler)
         throw(FileFormatError("Failed to read complete page from file ($(length(handler.cached_page)) of $(handler.page_length) bytes"))
     end
     _read_page_header(handler)
-    if handler.current_page_type == page_meta_type
+    if handler.current_page_type == page_meta_type || handler.current_page_type == page_meta_type_last
         _process_page_metadata(handler)
     end
 
@@ -1100,7 +1110,7 @@ function readline(handler)
     # Loop until a data row is read
     # println("  start loop")
     while true
-        if handler.current_page_type == page_meta_type
+        if handler.current_page_type == page_meta_type || handler.current_page_type == page_meta_type_last
             #println("    page type == page_meta_type")
             flag = handler.current_row_in_page_index >= length(handler.current_page_data_subheader_pointers)
             if flag
@@ -1161,7 +1171,7 @@ function readline(handler)
                 end
             end
             return false
-        elseif handler.current_page_type == page_data_type
+        elseif handler.current_page_type == page_data_type || handler.current_page_type == page_data_type_last
             #println("    page type == page_data_type")
             process_byte_array_with_data(handler,
                 handler.page_bit_offset + subheader_pointers_offset +
@@ -1649,8 +1659,10 @@ end
 # Convert page type value to human readable string
 function page_type_str(pt)
     if pt == page_meta_type return "META"
+    elseif pt == page_meta_type_last return "META_LAST"
     elseif pt == page_amd_type return "AMD"
     elseif pt == page_data_type return "DATA"
+    elseif pt == page_data_type_last return "DATA_LAST"
     elseif pt in page_mix_types return "MIX"
     else return "UNKNOWN $(pt)"
     end
