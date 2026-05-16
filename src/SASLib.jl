@@ -380,14 +380,11 @@ function read_header(handler)
     # println("os_name = $(handler.os_name)")
 end
 
-# Read all pages to find metadata
-# TODO however, this is inefficient since it reads a lot of data from disk
-# TODO can we tell if metadata is complete and break out of loop early?
+# Read pages until all metadata is found.
+# Stops early upon encountering the first data or mix page since metadata
+# only appears at the beginning of the file in practice.
 function read_file_metadata(handler)
-    # println3(handler, "IN: _parse_metadata")
-    i = 1
     while true
-        # println3(handler, "  filepos=$(position(handler.io)) page_length=$(handler.page_length)")
         handler.cached_page = Base.read(handler.io, handler.page_length)
         if length(handler.cached_page) <= 0
             break
@@ -395,9 +392,10 @@ function read_file_metadata(handler)
         if length(handler.cached_page) != handler.page_length
             throw(FileFormatError("Failed to read a meta data page from the SAS file."))
         end
-        # println("page $i = $(current_page_type_str(handler))")
-        _process_page_meta(handler)
-        i += 1
+        done = _process_page_meta(handler)
+        if done
+            break
+        end
     end
 end
 
