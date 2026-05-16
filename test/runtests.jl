@@ -484,7 +484,9 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
             for fname in ["nocomp_deletes.sas7bdat", "nocomp_pk_deletes.sas7bdat",
                           "comp_deletes.sas7bdat",   "comp_pk_deletes.sas7bdat"]
                 rs = readfile("data_issue79", fname; verbose_level = 0)
-                @test size(rs, 1) == 1990  "$fname: expected 1990 rows, got $(size(rs,1))"
+                @testset "$fname" begin
+                    @test size(rs, 1) == 1990
+                end
             end
 
             # Spot-check that rowno column contains values 1..1990 (no zero/deleted rows leaked)
