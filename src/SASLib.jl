@@ -610,7 +610,7 @@ function _process_rowsize_subheader(handler, offset, length)
     # Use the logical (non-deleted) row count for iteration. The physical count
     # (NOBS) includes deleted observations; NLOBS = NOBS - DELOBS is the actual
     # number of rows that should be returned to the caller.
-    if handler.deleted_row_count > 0 && handler.deleted_row_count < handler.row_count
+    if handler.deleted_row_count > 0 && handler.deleted_row_count <= handler.row_count
         handler.row_count -= handler.deleted_row_count
     end
 

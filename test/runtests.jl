@@ -496,6 +496,8 @@ Base.convert(::Type{YearStr}, v::Float64) = YearStr(string(round(Int, v)))
             @test rownos[end]  ≈ 1990.0
             @test all(rownos .> 0)
         end
+    else
+        @warn "Skipping issue #79 tests: test/data_issue79/ not found (download files from issue #79 attachment)"
     end
 
 end
