@@ -63,7 +63,13 @@ const page_amd_type = 1024
 const page_metc_type = 16384
 const page_comp_type = -28672
 const page_mix_types = [512, 640]
-const page_meta_data_mix_types = vcat(page_meta_type, page_data_type, page_mix_types)
+# SAS sets bit 7 (0x80) on the last page of each page-type group when the
+# dataset has logically deleted observations.  These variants must be treated
+# identically to their base page types.
+const page_meta_type_last = 128   # 0x080: last meta/compressed-data page
+const page_data_type_last = 384   # 0x180: last uncompressed-data page
+const page_meta_data_mix_types = vcat(page_meta_type, page_data_type, page_mix_types,
+                                      [page_meta_type_last, page_data_type_last])
 const subheader_pointers_offset = 8
 const subheader_comp_uncompressed = 0
 const subheader_comp_truncated = 1
@@ -71,6 +77,7 @@ const subheader_comp_compressed = 4
 const text_block_size_length = 2
 const row_length_offset_multiplier = 5
 const row_count_offset_multiplier = 6
+const deleted_row_count_offset_multiplier = 7  # DELOBS field; see SAS internal format / ReadStat row-size subheader layout
 const col_count_p1_multiplier = 9
 const col_count_p2_multiplier = 10
 const row_count_on_mix_page_offset_multiplier = 15

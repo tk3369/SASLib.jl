@@ -93,6 +93,7 @@ mutable struct Handler
 
     row_length::Int64
     row_count::Int64
+    deleted_row_count::Int64
     col_count_p1::Int64
     col_count_p2::Int64
     mix_page_row_count::Int64
