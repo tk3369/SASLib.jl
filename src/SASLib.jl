@@ -396,7 +396,9 @@ function read_file_metadata(handler)
             throw(FileFormatError("Failed to read a meta data page from the SAS file."))
         end
         # println("page $i = $(current_page_type_str(handler))")
-        _process_page_meta(handler)
+        if _process_page_meta(handler)
+            break
+        end
         i += 1
     end
 end
@@ -756,12 +758,18 @@ end
 
 function _process_columnattributes_subheader(handler, offset, length)
     # println("IN: _process_columnattributes_subheader")
+
+    # Skip if we already have all column attributes. This prevents duplicate
+    # processing when metadata pages are re-visited during read_first_page or
+    # _read_next_page_content (for large files with attributes spanning multiple pages).
+    if handler.column_count > 0 && Base.length(handler.column_types) >= handler.column_count
+        return
+    end
+
     int_len = handler.int_length
     N = fld(length - 2 * int_len - 12, int_len + 8)
-    # println("  column_attributes_vectors_count = $column_attributes_vectors_count")
+    # println("  column_attributes_vectors_count = $N")
 
-
-    # Initialize arrays with the correct size
     ty  = fill(column_type_none, N)
     len = fill(0::Int64, N)
     off = fill(0::Int64, N)
@@ -782,14 +790,9 @@ function _process_columnattributes_subheader(handler, offset, length)
         ty[j] = (x == 1) ? column_type_decimal : column_type_string
     end
 
-    # Clear existing data and set the new values
-    empty!(handler.column_types)
+    # Accumulate across multiple metadata pages (do not clear existing data)
     append!(handler.column_types, ty)
-    
-    empty!(handler.column_data_lengths)
     append!(handler.column_data_lengths, len)
-    
-    empty!(handler.column_data_offsets)
     append!(handler.column_data_offsets, off)
 end
 
